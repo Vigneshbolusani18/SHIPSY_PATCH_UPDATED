@@ -47,3 +47,8 @@ body {
 .btn-ghost   { @apply bg-white/5 hover:bg-white/10 text-white; }
 
 a { @apply underline decoration-white/20 underline-offset-4 hover:decoration-brand-500; }
+
+/* Make all text black by default */
+html, body {
+  color: black !important;
+}

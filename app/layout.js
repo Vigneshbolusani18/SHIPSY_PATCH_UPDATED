@@ -24,7 +24,7 @@ export default async function RootLayout({ children }) {
 
   return (
     <html lang="en">
-      <body className="min-h-screen">
+      <body className="min-h-screen text-black">
         <header className="sticky top-0 z-50 border-b border-white/10 bg-black/30 backdrop-blur">
           <div className="mx-auto max-w-6xl px-4 flex h-14 items-center justify-between">
             <a
