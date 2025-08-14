@@ -1,48 +1,37 @@
 // app/api/ai/predict-delay/route.js
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 
-import { NextResponse } from 'next/server';
-import { askGeminiWithRetry } from '@/lib/ai';
+import { NextResponse } from "next/server";
+import { askGeminiWithRetry, isQuotaError } from "@/lib/ai";
 
 export async function POST(req) {
   try {
     const { origin, destination, shipDate, transitDays } = await req.json();
 
     const prompt = `
-You are a logistics assistant. Estimate the delay risk and propose a refined ETA window.
-Return 3 concise bullets only.
+You are an assistant estimating shipment delays.
+Origin: ${origin}
+Destination: ${destination}
+Ship date: ${shipDate}
+Planned transit (days): ${transitDays}
 
-Input:
-- origin: ${origin}
-- destination: ${destination}
-- shipDate (ISO): ${shipDate}
-- planned transit days: ${transitDays}
+In 3 lines:
+1) Likely delay (days or "none")
+2) New ETA date (YYYY-MM-DD)
+3) 1 actionable tip
+`;
 
-Consider typical lane delays, terminal handoffs, weekends, and buffer.
-Output format exactly:
-- Risk: <low|medium|high> - <primary driver>
-- ETA window: <YYYY-MM-DD> to <YYYY-MM-DD>
-- Note: <one practical suggestion>
-`.trim();
-
-    const text = await askGeminiWithRetry({
-      prompt,
-      primary: "gemini-1.5-flash",
-      fallback: "gemini-1.5-flash-8b",
-      maxRetries: 4,
-      baseDelay: 700,
-    });
-
+    const text = await askGeminiWithRetry(prompt);
     return NextResponse.json({ raw: text });
   } catch (e) {
-    const msg = String(e?.message || "");
-    const overloaded =
-      e?.status === 503 ||
-      /503|overloaded|busy|Service Unavailable/i.test(msg);
-
-    return NextResponse.json(
-      { error: overloaded ? "AI is temporarily busy. Please try again in a few seconds." : "AI error." },
-      { status: overloaded ? 503 : 500 }
-    );
+    console.error("POST /api/ai/predict-delay error", e);
+    const status = e?.status || 500;
+    if (isQuotaError(e)) {
+      return NextResponse.json(
+        { error: "Gemini quota exceeded. Try again later." },
+        { status }
+      );
+    }
+    return NextResponse.json({ error: e?.message || "AI error" }, { status });
   }
 }

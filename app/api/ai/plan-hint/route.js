@@ -2,54 +2,40 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import { askGeminiWithRetry } from "@/lib/ai";
+import { askGeminiWithRetry, isQuotaError } from "@/lib/ai";
 
 export async function POST(req) {
   try {
-    const { vessel, shipments } = await req.json();
-
-    const capLines = [
-      vessel?.weightCap ? `- Vessel weight cap: ${vessel.weightCap} tons` : null,
-      vessel?.volumeCap ? `- Vessel volume cap: ${vessel.volumeCap} m³`   : null,
-    ].filter(Boolean).join("\n");
-
-    const rows = (shipments || []).map(s => {
-      return `- ${s.shipmentId} | status=${s.status} | prio=${s.isPriority ? 'Y' : 'N'} | ${s.origin}→${s.destination} | shipDate=${s.shipDate} | transitDays=${s.transitDays}${s.weightTons ? ` | wt=${s.weightTons}t` : ''}${s.volumeM3 ? ` | vol=${s.volumeM3}m³` : ''}`;
-    }).join("\n");
+    const { shipments = [], vessel = {} } = await req.json();
 
     const prompt = `
-You are a freight planner.
-Given a list of shipments and (optional) vessel caps, propose a short loading/assignment hint:
+You're a freight planner. Given shipments and optional vessel caps,
+suggest a load order, call out skips if capacity is exceeded, and give 2–3 risk tips.
 
-Return concise markdown with:
-- A suggested loading order (by shipmentId)
-- Any likely skips if capacity constrained (and why)
-- 2-3 practical delay-minimization tips
+Vessel caps (optional):
+- weightCap (tons): ${vessel.weightCap ?? "n/a"}
+- volumeCap (m3): ${vessel.volumeCap ?? "n/a"}
 
-INPUT
-${capLines || "- No explicit caps provided"}
-Shipments:
-${rows || "- (none provided)"}
-`.trim();
+Shipments (JSON):
+\`\`\`json
+${JSON.stringify(shipments, null, 2)}
+\`\`\`
 
-    const hint = await askGeminiWithRetry({
-      prompt,
-      primary: "gemini-1.5-flash",
-      fallback: "gemini-1.5-flash-8b",
-      maxRetries: 4,
-      baseDelay: 700,
-    });
+Return a short bullet list. Be concise.
+`;
 
-    return NextResponse.json({ hint });
+    const text = await askGeminiWithRetry(prompt);
+    return NextResponse.json({ hint: text });
   } catch (e) {
-    const msg = String(e?.message || "");
-    const overloaded =
-      e?.status === 503 ||
-      /503|overloaded|busy|Service Unavailable/i.test(msg);
-
-    return NextResponse.json(
-      { error: overloaded ? "AI is temporarily busy. Please try again." : "AI error." },
-      { status: overloaded ? 503 : 500 }
-    );
+    console.error("POST /api/ai/plan-hint error", e);
+    const status = e?.status || 500;
+    // Show friendly message for quota
+    if (isQuotaError(e)) {
+      return NextResponse.json(
+        { error: "Gemini quota exceeded. Try again later or disable AI." },
+        { status }
+      );
+    }
+    return NextResponse.json({ error: e?.message || "AI error" }, { status });
   }
 }

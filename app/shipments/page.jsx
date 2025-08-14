@@ -7,7 +7,6 @@ import Button from '@/components/ui/Button'
 
 const STATUSES = ['CREATED','IN_TRANSIT','DELIVERED','RETURNED']
 const EVENT_TYPES = ['CREATED','SCANNED','LOADED','DEPARTED','ARRIVED','DELIVERED','DELAYED']
-
 export default function ShipmentsPage() {
   // list/query state
   const [items, setItems] = useState([])
@@ -40,6 +39,14 @@ export default function ShipmentsPage() {
   const [etaLoadingId, setEtaLoadingId] = useState(null)
   const [etaResultId, setEtaResultId] = useState(null)
   const [etaResult, setEtaResult] = useState('')
+
+  // --- Voyages quick actions state ---
+const [showVoyageForm, setShowVoyageForm] = useState(false);
+const [voyageForm, setVoyageForm] = useState({
+  voyageCode: '', vesselName: '', origin: '', destination: '',
+  departAt: '', arriveBy: '', weightCapT: '', volumeCapM3: ''
+});
+
 
   // FFD result
   const [ffdOut, setFfdOut] = useState(null)
@@ -201,6 +208,68 @@ export default function ShipmentsPage() {
     }
   }
 
+  async function createVoyage(e) {
+  e.preventDefault();
+  try {
+    const res = await fetch('/api/voyages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(voyageForm),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || 'Failed to create voyage');
+      return;
+    }
+    setVoyageForm({
+      voyageCode: '', vesselName: '', origin: '', destination: '',
+      departAt: '', arriveBy: '', weightCapT: '', volumeCapM3: ''
+    });
+    setShowVoyageForm(false);
+    alert('Voyage created!');
+    // optional: if you show assigned voyage in the table via GET /shipments, refresh:
+    load();
+  } catch (e) {
+    alert('Network error while creating voyage');
+  }
+}
+
+async function autoAssignShipments() {
+  try {
+    const res = await fetch('/api/voyages/auto-assign', { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || 'Auto-assign failed');
+      return;
+    }
+    const data = await res.json();
+    alert(`Auto-assigned ${data.count} shipments`);
+    // refresh shipments list to reflect assignments if you show them
+    load();
+  } catch (e) {
+    alert('Network error while auto-assigning');
+  }
+}
+async function aiAutoAssign() {
+  try {
+    const res = await fetch('/api/voyages/ai-assign', { method: 'POST' });
+    // Some servers return an empty body on success; parse defensively.
+    let data = { assigned: 0, processed: 0 };
+    try {
+      const text = await res.text();
+      if (text) data = JSON.parse(text);
+    } catch (_) {}
+
+    alert(`AI assigned ${data.assigned} / ${data.processed}`);
+    // Refresh the table so the “Voyage” column (if shown) reflects changes.
+    load();
+  } catch (e) {
+    alert('AI auto-assign failed');
+  }
+}
+
+
+
   const baseInput = "input w-full"
 
   return (
@@ -267,6 +336,53 @@ export default function ShipmentsPage() {
           </select>
         </div>
 
+<div className="mb-3 flex flex-wrap items-center gap-3">
+  <Button variant="ghost" onClick={() => setShowVoyageForm(v => !v)}>
+    {showVoyageForm ? 'Close Voyage Form' : 'Add Voyage'}
+  </Button>
+  <Button variant="ghost" onClick={autoAssignShipments}>
+    Auto-assign Shipments
+  </Button>
+
+  {/* NEW: AI auto-assign button */}
+  <Button variant="ghost" onClick={aiAutoAssign}>
+    AI Auto-Assign (AI)
+  </Button>
+
+</div>
+
+
+
+{/* --- Inline Add Voyage form (collapsible) --- */}
+{showVoyageForm && (
+  <div className="card p-4 mb-3">
+    <form onSubmit={createVoyage} className="grid md:grid-cols-3 gap-3">
+      <Input placeholder="Voyage Code" value={voyageForm.voyageCode}
+             onChange={e=>setVoyageForm({...voyageForm, voyageCode:e.target.value})} />
+      <Input placeholder="Vessel Name" value={voyageForm.vesselName}
+             onChange={e=>setVoyageForm({...voyageForm, vesselName:e.target.value})} />
+      <Input placeholder="Origin" value={voyageForm.origin}
+             onChange={e=>setVoyageForm({...voyageForm, origin:e.target.value})} />
+      <Input placeholder="Destination" value={voyageForm.destination}
+             onChange={e=>setVoyageForm({...voyageForm, destination:e.target.value})} />
+      <Input type="date" placeholder="Depart At" value={voyageForm.departAt}
+             onChange={e=>setVoyageForm({...voyageForm, departAt:e.target.value})} />
+      <Input type="date" placeholder="Arrive By" value={voyageForm.arriveBy}
+             onChange={e=>setVoyageForm({...voyageForm, arriveBy:e.target.value})} />
+      <Input type="number" step="0.01" placeholder="Weight Cap (tons)" value={voyageForm.weightCapT}
+             onChange={e=>setVoyageForm({...voyageForm, weightCapT:e.target.value})} />
+      <Input type="number" step="0.01" placeholder="Volume Cap (m³)" value={voyageForm.volumeCapM3}
+             onChange={e=>setVoyageForm({...voyageForm, volumeCapM3:e.target.value})} />
+
+      <div className="md:col-span-3 flex gap-2">
+        <Button type="submit">Create Voyage</Button>
+        <Button type="button" variant="ghost" onClick={()=>setShowVoyageForm(false)}>Cancel</Button>
+      </div>
+    </form>
+  </div>
+)}
+
+
         {/* AI controls */}
         <div className="mb-3 grid md:grid-cols-4 gap-3">
           <Input placeholder="Vessel Weight Cap (optional)" value={vessel.weightCap} onChange={e=>setVessel(v=>({...v, weightCap:e.target.value}))} />
@@ -276,7 +392,7 @@ export default function ShipmentsPage() {
           </Button>
           <Button variant="ghost" onClick={runFFD}>Run FFD Plan</Button>
         </div>
-
+             
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

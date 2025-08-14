@@ -3,12 +3,16 @@ export const runtime = 'nodejs';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { estimatedDeliveryFrom, toBoolean } from '@/lib/shipment-utils';
+import { pickBestVoyageForShipment, moveShipmentToVoyage } from '@/lib/assign';
 
-// POST /api/shipments  → create
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { shipmentId, status = 'CREATED', isPriority = false, origin, destination, shipDate, transitDays } = body;
+    const {
+      shipmentId, status = 'CREATED', isPriority = false,
+      origin, destination, shipDate, transitDays,
+      weightTons, volumeM3
+    } = body;
 
     if (!shipmentId || !origin || !destination || !shipDate || transitDays == null) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -16,20 +20,26 @@ export async function POST(req) {
 
     const created = await prisma.shipment.create({
       data: {
-        shipmentId,
-        status,
-        isPriority: Boolean(isPriority),
-        origin,
-        destination,
+        shipmentId, status, isPriority: Boolean(isPriority),
+        origin, destination,
         shipDate: new Date(shipDate),
         transitDays: Number(transitDays),
-        weightTons:  (weightTons ?? null) === null ? null : Number(weightTons),
-        volumeM3:    (volumeM3 ?? null)   === null ? null : Number(volumeM3),
+        weightTons: weightTons === '' || weightTons == null ? null : Number(weightTons),
+        volumeM3:   volumeM3   === '' || volumeM3   == null ? null : Number(volumeM3),
       },
     });
 
+    let assignedVoyageId = null;
+    try {
+      const best = await pickBestVoyageForShipment(created);
+      if (best) {
+        await moveShipmentToVoyage({ shipmentId: created.id, voyageId: best });
+        assignedVoyageId = best;
+      }
+    } catch (e) { console.warn('Auto-assign failed:', e?.message || e); }
+
     return NextResponse.json(
-      { ...created, estimatedDelivery: estimatedDeliveryFrom(created.shipDate, created.transitDays) },
+      { ...created, assignedVoyageId, estimatedDelivery: estimatedDeliveryFrom(created.shipDate, created.transitDays) },
       { status: 201 }
     );
   } catch (e) {
@@ -38,7 +48,6 @@ export async function POST(req) {
   }
 }
 
-// GET /api/shipments?page&limit&status&isPriority&q&sortBy&order
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -67,13 +76,24 @@ export async function GET(req) {
         orderBy: { [sortBy]: order },
         skip: (page - 1) * limit,
         take: limit,
+        include: {
+          assignments: {
+            include: { voyage: { select: { id: true, voyageCode: true } } },
+            take: 1,
+          }
+        }
       }),
     ]);
 
-    const items = rows.map(s => ({
-      ...s,
-      estimatedDelivery: estimatedDeliveryFrom(s.shipDate, s.transitDays),
-    }));
+    const items = rows.map(s => {
+      const assigned = s.assignments?.[0]?.voyage || null;
+      const { assignments, ...rest } = s;
+      return {
+        ...rest,
+        estimatedDelivery: estimatedDeliveryFrom(s.shipDate, s.transitDays),
+        assignedVoyage: assigned, // { id, voyageCode } | null
+      };
+    });
 
     return NextResponse.json({ page, limit, total, items });
   } catch (e) {
