@@ -1,5 +1,6 @@
+// prisma/schema.prisma
 datasource db {
-  provider = "postgresql"
+  provider = "postgresql"           // Neon uses Postgres
   url      = env("DATABASE_URL")
 }
 
@@ -26,16 +27,26 @@ model Shipment {
   shipmentId  String          @unique
   status      ShipmentStatus  @default(CREATED)
   isPriority  Boolean         @default(false)
+
   origin      String
   destination String
+
   shipDate    DateTime
   transitDays Int
 
+  // NEW: capacity planning inputs
   weightTons  Float?
   volumeM3    Float?
+
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+
   events      TrackingEvent[]
+
+  // Helpful indexes for list/filter/sort
+  @@index([status, isPriority, createdAt])
+  @@index([shipDate])
+  @@index([shipmentId])
 }
 
 enum TrackingEventType {
@@ -52,9 +63,12 @@ model TrackingEvent {
   id         String            @id @default(cuid())
   shipmentId String
   shipment   Shipment          @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
   eventType  TrackingEventType
   location   String
   notes      String?
   occurredAt DateTime          @default(now())
   createdAt  DateTime          @default(now())
+
+  @@index([shipmentId, occurredAt])
 }

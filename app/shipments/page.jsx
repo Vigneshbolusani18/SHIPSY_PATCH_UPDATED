@@ -1,4 +1,5 @@
 'use client'
+
 import { useEffect, useMemo, useState } from 'react'
 import Card from '@/components/ui/Card'
 import Input from '@/components/ui/Input'
@@ -19,13 +20,12 @@ export default function ShipmentsPage() {
   const [sortBy, setSortBy] = useState('createdAt')
   const [order, setOrder] = useState('desc')
 
-  // create form
-const [form, setForm] = useState({
-  shipmentId: '', origin: '', destination: '',
-  shipDate: '', transitDays: 7, status: 'CREATED', isPriority: false,
-  weightTons: '', volumeM3: '' // <-- added
-})
-
+  // create form (includes weight & volume)
+  const [form, setForm] = useState({
+    shipmentId: '', origin: '', destination: '',
+    shipDate: '', transitDays: 7, status: 'CREATED', isPriority: false,
+    weightTons: '', volumeM3: ''
+  })
 
   // tracking events UI
   const [openShipmentId, setOpenShipmentId] = useState(null)
@@ -41,28 +41,10 @@ const [form, setForm] = useState({
   const [etaResultId, setEtaResultId] = useState(null)
   const [etaResult, setEtaResult] = useState('')
 
+  // FFD result
+  const [ffdOut, setFfdOut] = useState(null)
+
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / limit)), [total, limit])
-const [ffdOut, setFfdOut] = useState(null);
-async function runFFD() {
-  setFfdOut({ loading: true });
-  try {
-    const payload = {
-      vessel: {
-        weightCap: vessel.weightCap ? Number(vessel.weightCap) : undefined,
-        volumeCap: vessel.volumeCap ? Number(vessel.volumeCap) : undefined,
-      },
-      shipments: items, // visible items or fetch all—your choice
-    };
-    const res = await fetch('/api/plan/ffd', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    setFfdOut(data);
-  } catch {
-    setFfdOut({ error: 'Failed to plan' });
-  }
-}
 
   async function load() {
     const params = new URLSearchParams({
@@ -87,7 +69,11 @@ async function runFFD() {
       body: JSON.stringify(form),
     })
     if (res.ok) {
-      setForm({ shipmentId: '', origin: '', destination: '', shipDate: '', transitDays: 7, status: 'CREATED', isPriority: false })
+      setForm({
+        shipmentId: '', origin: '', destination: '',
+        shipDate: '', transitDays: 7, status: 'CREATED', isPriority: false,
+        weightTons: '', volumeM3: ''
+      })
       setPage(1)
       load()
     } else {
@@ -161,7 +147,8 @@ async function runFFD() {
         },
         shipments: items.map(s => ({
           id: s.id, shipmentId: s.shipmentId, status: s.status, isPriority: s.isPriority,
-          origin: s.origin, destination: s.destination, shipDate: s.shipDate, transitDays: s.transitDays
+          origin: s.origin, destination: s.destination, shipDate: s.shipDate, transitDays: s.transitDays,
+          weightTons: s.weightTons ?? null, volumeM3: s.volumeM3 ?? null,
         }))
       }
       const res = await fetch('/api/ai/plan-hint', {
@@ -193,6 +180,27 @@ async function runFFD() {
     }
   }
 
+  async function runFFD() {
+    setFfdOut({ loading: true })
+    try {
+      const payload = {
+        vessel: {
+          weightCap: vessel.weightCap ? Number(vessel.weightCap) : undefined,
+          volumeCap: vessel.volumeCap ? Number(vessel.volumeCap) : undefined,
+        },
+        shipments: items,
+      }
+      const res = await fetch('/api/plan/ffd', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      setFfdOut(data)
+    } catch {
+      setFfdOut({ error: 'Failed to plan' })
+    }
+  }
+
   const baseInput = "input w-full"
 
   return (
@@ -205,22 +213,6 @@ async function runFFD() {
           <Input placeholder="Destination" value={form.destination} onChange={e=>setForm({...form, destination:e.target.value})} />
           <Input type="date" value={form.shipDate} onChange={e=>setForm({...form, shipDate:e.target.value})} />
           <Input type="number" min="0" value={form.transitDays} onChange={e=>setForm({...form, transitDays:e.target.value})} />
-          <Input
-  type="number"
-  step="0.01"
-  placeholder="Weight (tons)"
-  value={form.weightTons ?? ''}
-  onChange={e => setForm({ ...form, weightTons: e.target.value })}
-/>
-
-<Input
-  type="number"
-  step="0.01"
-  placeholder="Volume (m³)"
-  value={form.volumeM3 ?? ''}
-  onChange={e => setForm({ ...form, volumeM3: e.target.value })}
-/>
-
           <select className={baseInput} value={form.status} onChange={e=>setForm({...form, status:e.target.value})}>
             {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -228,6 +220,23 @@ async function runFFD() {
             <input type="checkbox" checked={form.isPriority} onChange={e=>setForm({...form, isPriority:e.target.checked})} />
             Priority
           </label>
+
+          {/* NEW: Weight & Volume */}
+          <Input
+            type="number"
+            step="0.01"
+            placeholder="Weight (tons)"
+            value={form.weightTons ?? ''}
+            onChange={e => setForm({ ...form, weightTons: e.target.value })}
+          />
+          <Input
+            type="number"
+            step="0.01"
+            placeholder="Volume (m³)"
+            value={form.volumeM3 ?? ''}
+            onChange={e => setForm({ ...form, volumeM3: e.target.value })}
+          />
+
           <Button type="submit" className="md:col-span-3">Create</Button>
         </form>
       </Card>
@@ -258,15 +267,14 @@ async function runFFD() {
           </select>
         </div>
 
-        {/* AI Plan Hint controls */}
-        <div className="mb-3 grid md:grid-cols-3 gap-3">
+        {/* AI controls */}
+        <div className="mb-3 grid md:grid-cols-4 gap-3">
           <Input placeholder="Vessel Weight Cap (optional)" value={vessel.weightCap} onChange={e=>setVessel(v=>({...v, weightCap:e.target.value}))} />
           <Input placeholder="Vessel Volume Cap (optional)" value={vessel.volumeCap} onChange={e=>setVessel(v=>({...v, volumeCap:e.target.value}))} />
           <Button variant="ghost" onClick={getPlanHint} disabled={aiLoading}>
             {aiLoading ? 'Getting AI Hint…' : 'AI Plan Hint'}
           </Button>
           <Button variant="ghost" onClick={runFFD}>Run FFD Plan</Button>
-
         </div>
 
         {/* Table */}
@@ -278,13 +286,12 @@ async function runFFD() {
                 <th className="py-2">Origin → Destination</th>
                 <th className="py-2 cursor-pointer" onClick={()=>toggleSort('shipDate')}>Ship Date</th>
                 <th className="py-2">Transit Days</th>
+                <th className="py-2">Wt (t)</th>
+                <th className="py-2">Vol (m³)</th>
                 <th className="py-2 cursor-pointer" onClick={()=>toggleSort('status')}>Status</th>
                 <th className="py-2">Priority</th>
                 <th className="py-2">Est. Delivery</th>
                 <th className="py-2">Actions</th>
-                <th className="py-2">Wt (t)</th>
-<th className="py-2">Vol (m³)</th>
-                
               </tr>
             </thead>
             <tbody>
@@ -294,24 +301,29 @@ async function runFFD() {
                   <td className="py-2">{s.origin} → {s.destination}</td>
                   <td className="py-2">{new Date(s.shipDate).toLocaleDateString()}</td>
                   <td className="py-2">{s.transitDays}</td>
+                  <td className="py-2">{s.weightTons ?? '-'}</td>
+                  <td className="py-2">{s.volumeM3 ?? '-'}</td>
                   <td className="py-2">{s.status}</td>
                   <td className="py-2">{s.isPriority ? 'Yes' : 'No'}</td>
                   <td className="py-2">{new Date(s.estimatedDelivery).toLocaleDateString()}</td>
-                  <td className="py-2 flex flex-wrap gap-2">
-                    <td className="py-2">{s.weightTons ?? '-'}</td>
-<td className="py-2">{s.volumeM3 ?? '-'}</td>
-                    <button className="btn btn-ghost" onClick={()=>del(s.id)}>Delete</button>
-                    <button className="btn btn-ghost" onClick={()=>openEvents(s)}>
-                      {openShipmentId === s.id ? 'Hide Events' : 'Events'}
-                    </button>
-                    <button className="btn btn-ghost" onClick={()=>predictETA(s)} disabled={etaLoadingId === s.id}>
-                      {etaLoadingId === s.id ? 'ETA…' : 'ETA+'}
-                    </button>
+                  {/* ✅ Actions cell contains a div (no nested <td>) */}
+                  <td className="py-2">
+                    <div className="flex flex-wrap gap-2">
+                      <button className="btn btn-ghost" onClick={()=>del(s.id)}>Delete</button>
+                      <button className="btn btn-ghost" onClick={()=>openEvents(s)}>
+                        {openShipmentId === s.id ? 'Hide Events' : 'Events'}
+                      </button>
+                      <button className="btn btn-ghost" onClick={()=>predictETA(s)} disabled={etaLoadingId === s.id}>
+                        {etaLoadingId === s.id ? 'ETA…' : 'ETA+'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {items.length === 0 && (
-                <tr><td colSpan={8} className="py-6 text-center text-[rgb(var(--muted))]">No shipments</td></tr>
+                <tr>
+                  <td colSpan={10} className="py-6 text-center text-[rgb(var(--muted))]">No shipments</td>
+                </tr>
               )}
             </tbody>
           </table>
@@ -346,21 +358,21 @@ async function runFFD() {
           </div>
         )}
         {ffdOut && !ffdOut.loading && (
-  <div className="mt-4 card p-4 text-sm">
-    <div className="mb-2 text-[rgb(var(--muted))]">FFD Plan</div>
-    <div>Assigned: {Array.isArray(ffdOut.assigned) ? ffdOut.assigned.join(', ') : '-'}</div>
-    <div>Skipped: {Array.isArray(ffdOut.skipped) && ffdOut.skipped.length
-      ? ffdOut.skipped.map(s => `${s.shipmentId}(${s.reason})`).join(', ')
-      : 'None'}</div>
-    {ffdOut.utilization && (
-      <div className="mt-2">
-        Utilization: {ffdOut.utilization.weight ?? '-'}% weight,
-        {' '}{ffdOut.utilization.volume ?? '-'}% volume
-      </div>
-    )}
-  </div>
-)}
-
+          <div className="mt-4 card p-4 text-sm">
+            <div className="mb-2 text-[rgb(var(--muted))]">FFD Plan</div>
+            <div>Assigned: {Array.isArray(ffdOut.assigned) ? ffdOut.assigned.join(', ') : '-'}</div>
+            <div>
+              Skipped: {Array.isArray(ffdOut.skipped) && ffdOut.skipped.length
+                ? ffdOut.skipped.map(s => `${s.shipmentId}(${s.reason})`).join(', ')
+                : 'None'}
+            </div>
+            {ffdOut.utilization && (
+              <div className="mt-2">
+                Utilization: {ffdOut.utilization.weight ?? '-'}% weight, {ffdOut.utilization.volume ?? '-'}% volume
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Events Panel */}
         {openShipmentId && (
