@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { estimatedDeliveryFrom, toBoolean } from '@/lib/shipment-utils';
 
-// POST /api/shipments  → create one
+// POST /api/shipments  → create
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -45,19 +45,17 @@ export async function GET(req) {
     const status = searchParams.get('status') || undefined;
     const q      = searchParams.get('q') || undefined;
     const isPr   = toBoolean(searchParams.get('isPriority'));
-    const sortBy = searchParams.get('sortBy') || 'createdAt'; // createdAt | shipDate | shipmentId | status
+    const sortBy = searchParams.get('sortBy') || 'createdAt';
     const order  = (searchParams.get('order') || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
 
     const where = {
       ...(status ? { status } : {}),
       ...(typeof isPr === 'boolean' ? { isPriority: isPr } : {}),
-      ...(q ? {
-        OR: [
-          { shipmentId:  { contains: q, mode: 'insensitive' } },
-          { origin:      { contains: q, mode: 'insensitive' } },
-          { destination: { contains: q, mode: 'insensitive' } },
-        ]
-      } : {})
+      ...(q ? { OR: [
+        { shipmentId:  { contains: q, mode: 'insensitive' } },
+        { origin:      { contains: q, mode: 'insensitive' } },
+        { destination: { contains: q, mode: 'insensitive' } },
+      ] } : {}),
     };
 
     const [total, rows] = await Promise.all([

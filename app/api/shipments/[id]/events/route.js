@@ -3,10 +3,10 @@ export const runtime = 'nodejs';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
-// GET /api/shipments/:id/events  → list newest first
-export async function GET(_req, { params }) {
+// GET /api/shipments/:id/events
+export async function GET(req, context) {
   try {
-    const { id } = params;
+    const { id } = await context.params;
     const events = await prisma.trackingEvent.findMany({
       where: { shipmentId: id },
       orderBy: { occurredAt: 'desc' },
@@ -18,19 +18,16 @@ export async function GET(_req, { params }) {
   }
 }
 
-// POST /api/shipments/:id/events  → create
-// body: { eventType, location, notes?, occurredAt? }
-export async function POST(req, { params }) {
+// POST /api/shipments/:id/events
+export async function POST(req, context) {
   try {
-    const { id } = params;
-    const body = await req.json();
-    const { eventType, location, notes, occurredAt } = body;
+    const { id } = await context.params;
+    const { eventType, location, notes, occurredAt } = await req.json();
 
     if (!eventType || !location) {
       return NextResponse.json({ error: 'eventType and location are required' }, { status: 400 });
     }
 
-    // ensure shipment exists (optional but nice)
     const exists = await prisma.shipment.findUnique({ where: { id } });
     if (!exists) return NextResponse.json({ error: 'shipment not found' }, { status: 404 });
 
