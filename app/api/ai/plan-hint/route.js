@@ -1,28 +1,55 @@
+// app/api/ai/plan-hint/route.js
 export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
-import { askGemini } from "@/lib/ai";
+import { askGeminiWithRetry } from "@/lib/ai";
 
 export async function POST(req) {
   try {
-    const { vessel = {}, shipments = [] } = await req.json();
-   const prompt = `
-You are assisting with shipment loading prioritization **with capacity constraints**.
-Use weightTons and volumeM3 when present. Prefer: isPriority, IN_TRANSIT, earlier shipDate, shorter transitDays, and cluster similar lanes.
-Vessel capacity: ${JSON.stringify(vessel)}
-Shipments: ${JSON.stringify(shipments.map(s => ({
-  shipmentId: s.shipmentId, status: s.status, isPriority: s.isPriority,
-  origin: s.origin, destination: s.destination, shipDate: s.shipDate, transitDays: s.transitDays,
-  weightTons: s.weightTons, volumeM3: s.volumeM3
-}))).slice(0,7000)}
-Return concise bullets:
-- Feasible loading order (shipmentId)
-- If capacity insufficient, which to skip and why (weight/volume)
-- 1–2 operational tips
-`;
+    const { vessel, shipments } = await req.json();
 
-    const hint = await askGemini(prompt, "Logistics planner writing crisp bullet points.");
+    const capLines = [
+      vessel?.weightCap ? `- Vessel weight cap: ${vessel.weightCap} tons` : null,
+      vessel?.volumeCap ? `- Vessel volume cap: ${vessel.volumeCap} m³`   : null,
+    ].filter(Boolean).join("\n");
+
+    const rows = (shipments || []).map(s => {
+      return `- ${s.shipmentId} | status=${s.status} | prio=${s.isPriority ? 'Y' : 'N'} | ${s.origin}→${s.destination} | shipDate=${s.shipDate} | transitDays=${s.transitDays}${s.weightTons ? ` | wt=${s.weightTons}t` : ''}${s.volumeM3 ? ` | vol=${s.volumeM3}m³` : ''}`;
+    }).join("\n");
+
+    const prompt = `
+You are a freight planner.
+Given a list of shipments and (optional) vessel caps, propose a short loading/assignment hint:
+
+Return concise markdown with:
+- A suggested loading order (by shipmentId)
+- Any likely skips if capacity constrained (and why)
+- 2-3 practical delay-minimization tips
+
+INPUT
+${capLines || "- No explicit caps provided"}
+Shipments:
+${rows || "- (none provided)"}
+`.trim();
+
+    const hint = await askGeminiWithRetry({
+      prompt,
+      primary: "gemini-1.5-flash",
+      fallback: "gemini-1.5-flash-8b",
+      maxRetries: 4,
+      baseDelay: 700,
+    });
+
     return NextResponse.json({ hint });
   } catch (e) {
-    console.error(e); return NextResponse.json({ error: "ai_error" }, { status: 500 });
+    const msg = String(e?.message || "");
+    const overloaded =
+      e?.status === 503 ||
+      /503|overloaded|busy|Service Unavailable/i.test(msg);
+
+    return NextResponse.json(
+      { error: overloaded ? "AI is temporarily busy. Please try again." : "AI error." },
+      { status: overloaded ? 503 : 500 }
+    );
   }
 }

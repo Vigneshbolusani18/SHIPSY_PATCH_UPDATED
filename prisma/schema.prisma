@@ -1,12 +1,14 @@
 // prisma/schema.prisma
 datasource db {
-  provider = "postgresql"           // Neon uses Postgres
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")  // pooled (PgBouncer)
+  directUrl = env("DIRECT_URL")    // direct (no PgBouncer) for migrate
 }
 
 generator client {
   provider = "prisma-client-js"
 }
+
 
 model User {
   id           String   @id @default(cuid())
