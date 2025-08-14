@@ -29,6 +29,10 @@ export async function PUT(req, context) {
     if (body.isPriority != null) data.isPriority = Boolean(body.isPriority);
     if (body.shipDate != null)   data.shipDate   = new Date(body.shipDate);
     if (body.transitDays != null) data.transitDays = Number(body.transitDays);
+    // in PUT:
+if (body.weightTons != null) data.weightTons = Number(body.weightTons);
+if (body.volumeM3 != null)   data.volumeM3   = Number(body.volumeM3);
+
 
     const updated = await prisma.shipment.update({ where: { id }, data });
     return NextResponse.json({ ...updated, estimatedDelivery: estimatedDeliveryFrom(updated.shipDate, updated.transitDays) });

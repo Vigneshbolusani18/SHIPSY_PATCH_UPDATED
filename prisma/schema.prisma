@@ -30,6 +30,9 @@ model Shipment {
   destination String
   shipDate    DateTime
   transitDays Int
+
+  weightTons  Float?
+  volumeM3    Float?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   events      TrackingEvent[]

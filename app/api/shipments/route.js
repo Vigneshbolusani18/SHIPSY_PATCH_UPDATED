@@ -23,6 +23,8 @@ export async function POST(req) {
         destination,
         shipDate: new Date(shipDate),
         transitDays: Number(transitDays),
+        weightTons:  (weightTons ?? null) === null ? null : Number(weightTons),
+        volumeM3:    (volumeM3 ?? null)   === null ? null : Number(volumeM3),
       },
     });
 
