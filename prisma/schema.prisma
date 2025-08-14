@@ -13,3 +13,24 @@ model User {
   passwordHash String
   createdAt    DateTime @default(now())
 }
+
+enum ShipmentStatus {
+  CREATED
+  IN_TRANSIT
+  DELIVERED
+  RETURNED
+}
+
+model Shipment {
+  id           String          @id @default(cuid())
+  shipmentId   String          @unique
+  status       ShipmentStatus  @default(CREATED)
+  isPriority   Boolean         @default(false)
+  origin       String
+  destination  String
+  shipDate     DateTime
+  transitDays  Int
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
