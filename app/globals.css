@@ -1,26 +1,49 @@
+/* Tailwind v4 core */
 @import "tailwindcss";
 
+/* Theme tokens (Tailwind v4 uses @theme) */
+@theme {
+  --color-brand-50:  #eef6ff;
+  --color-brand-100: #d9ebff;
+  --color-brand-200: #b8d7ff;
+  --color-brand-300: #8bbaff;
+  --color-brand-400: #5a95ff;
+  --color-brand-500: #3b82f6; /* primary */
+  --color-brand-600: #2f6ae6;
+  --color-brand-700: #2656c2;
+  --color-brand-800: #20479d;
+  --color-brand-900: #1d3d82;
+}
+
+/* App theme */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: 15 15 18;     /* background rgb */
+  --fg: 245 246 250;  /* foreground */
+  --muted: 160 164 175;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+html, body { height: 100%; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  background-color: rgb(var(--bg));
+  color: rgb(var(--fg));
+    background-image: url('/bg.jpg');
+  background-size: cover;
+  background-position: center;
 }
+
+/* Reusable primitives */
+.card {
+  @apply bg-white/25 backdrop-blur border border-white/10 rounded-2xl shadow-lg;
+}
+.input {
+  @apply w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2
+         text-[rgb(var(--fg))] placeholder:text-[rgb(var(--muted))]
+         focus:outline-none focus:ring-2 focus:ring-brand-500;
+}
+.btn { @apply inline-flex items-center justify-center rounded-lg px-4 py-2 font-medium transition; }
+.btn-primary { @apply bg-brand-500 hover:bg-brand-600 text-white; }
+.btn-ghost   { @apply bg-white/5 hover:bg-white/10 text-white; }
+
+a { @apply underline decoration-white/20 underline-offset-4 hover:decoration-brand-500; }
