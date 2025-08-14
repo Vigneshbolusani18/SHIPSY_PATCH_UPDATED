@@ -23,7 +23,6 @@ export default function Home() {
           <div className="mt-4 flex gap-3">
             <a href="/shipments" className="btn btn-primary">Shipments</a>
             <a href="/voyages" className="btn btn-ghost">Voyages</a>
-            <Button onClick={logout} className="ml-auto">Logout</Button>
           </div>
         </Card>
 
