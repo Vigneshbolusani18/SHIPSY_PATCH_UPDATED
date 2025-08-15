@@ -45,6 +45,13 @@ export default function ShipmentsPage() {
   const [etaResultId, setEtaResultId] = useState(null)
   const [etaResult, setEtaResult] = useState('')
 
+  // lane/date filters for AI tools
+  const [aiFilter, setAiFilter] = useState({
+    origin: '',
+    destination: '',
+    startAfter: '', // YYYY-MM-DD
+  })
+
   // Voyages quick actions state
   const [showVoyageForm, setShowVoyageForm] = useState(false)
   const [voyageForm, setVoyageForm] = useState({
@@ -87,7 +94,6 @@ export default function ShipmentsPage() {
       })
       setPage(1)
       load()
-      // jump to Manage tab so user can see it appear
       setTab('manage')
     } else {
       const err = await res.json().catch(()=>({}))
@@ -162,7 +168,13 @@ export default function ShipmentsPage() {
           id: s.id, shipmentId: s.shipmentId, status: s.status, isPriority: s.isPriority,
           origin: s.origin, destination: s.destination, shipDate: s.shipDate, transitDays: s.transitDays,
           weightTons: s.weightTons ?? null, volumeM3: s.volumeM3 ?? null,
-        }))
+        })),
+        // NEW: lane/date filters
+        filters: {
+          origin: aiFilter.origin || undefined,
+          destination: aiFilter.destination || undefined,
+          startAfter: aiFilter.startAfter || undefined,
+        }
       }
       const res = await fetch('/api/ai/plan-hint', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -202,6 +214,12 @@ export default function ShipmentsPage() {
           volumeCap: vessel.volumeCap ? Number(vessel.volumeCap) : undefined,
         },
         shipments: items,
+        // NEW: lane/date filters
+        filters: {
+          origin: aiFilter.origin || undefined,
+          destination: aiFilter.destination || undefined,
+          startAfter: aiFilter.startAfter || undefined,
+        }
       }
       const res = await fetch('/api/plan/ffd', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -256,19 +274,26 @@ export default function ShipmentsPage() {
   }
 
   async function aiAutoAssign() {
+  try {
+    const res = await fetch('/api/voyages/ai-assign', { method: 'POST' });
+    let data = { assigned: 0, processed: 0, messages: [] };
+
     try {
-      const res = await fetch('/api/voyages/ai-assign', { method: 'POST' })
-      let data = { assigned: 0, processed: 0 }
-      try {
-        const text = await res.text()
-        if (text) data = JSON.parse(text)
-      } catch (_) {}
-      alert(`AI assigned ${data.assigned} / ${data.processed}`)
-      load()
-    } catch (e) {
-      alert('AI auto-assign failed')
-    }
+      const text = await res.text();
+      if (text) data = JSON.parse(text);
+    } catch (_) {}
+
+    alert(
+      `AI assigned ${data.assigned} / ${data.processed}\n\n` +
+      (Array.isArray(data.messages) ? data.messages.join('\n') : '')
+    );
+
+    load(); // Refresh the list after assigning
+  } catch (e) {
+    alert('AI auto-assign failed');
   }
+}
+
 
   const baseInput = "input w-full"
 
@@ -276,22 +301,13 @@ export default function ShipmentsPage() {
     <div className="grid gap-6">
       {/* ===== Top Tabs ===== */}
       <div className="card p-2 flex gap-2">
-        <button
-          className={`btn ${tab==='add' ? '' : 'btn-ghost'}`}
-          onClick={() => setTab('add')}
-        >
+        <button className={`btn ${tab==='add' ? '' : 'btn-ghost'}`} onClick={() => setTab('add')}>
           Add Shipment
         </button>
-        <button
-          className={`btn ${tab==='manage' ? '' : 'btn-ghost'}`}
-          onClick={() => setTab('manage')}
-        >
+        <button className={`btn ${tab==='manage' ? '' : 'btn-ghost'}`} onClick={() => setTab('manage')}>
           Manage Shipments
         </button>
-        <button
-          className={`btn ${tab==='ai' ? '' : 'btn-ghost'}`}
-          onClick={() => setTab('ai')}
-        >
+        <button className={`btn ${tab==='ai' ? '' : 'btn-ghost'}`} onClick={() => setTab('ai')}>
           AI
         </button>
       </div>
@@ -431,7 +447,9 @@ export default function ShipmentsPage() {
                     <td className="py-2">{s.volumeM3 ?? '-'}</td>
                     <td className="py-2">{s.status}</td>
                     <td className="py-2">{s.isPriority ? 'Yes' : 'No'}</td>
-                    <td className="py-2">{new Date(s.estimatedDelivery).toLocaleDateString()}</td>
+                    <td className="py-2">
+                      {s.estimatedDelivery ? new Date(s.estimatedDelivery).toLocaleDateString() : '-'}
+                    </td>
                     <td className="py-2">
                       <div className="flex flex-wrap gap-2">
                         <button className="btn btn-ghost" onClick={()=>del(s.id)}>Delete</button>
@@ -512,13 +530,32 @@ export default function ShipmentsPage() {
       {tab === 'ai' && (
         <>
           <Card title="AI Tools (Plan Hint & FFD)">
-            <div className="mb-3 grid md:grid-cols-4 gap-3">
-              <Input placeholder="Vessel Weight Cap (optional)" value={vessel.weightCap} onChange={e=>setVessel(v=>({...v, weightCap:e.target.value}))} />
-              <Input placeholder="Vessel Volume Cap (optional)" value={vessel.volumeCap} onChange={e=>setVessel(v=>({...v, volumeCap:e.target.value}))} />
-              <Button variant="ghost" onClick={getPlanHint} disabled={aiLoading}>
-                {aiLoading ? 'Getting AI Hint…' : 'AI Plan Hint'}
-              </Button>
-              <Button variant="ghost" onClick={runFFD}>Run FFD Plan</Button>
+            <div className="mb-3 grid md:grid-cols-6 gap-3">
+              {/* NEW: lane/date filters */}
+              <Input placeholder="From (Origin) — optional"
+                     value={aiFilter.origin}
+                     onChange={e=>setAiFilter(v=>({...v, origin: e.target.value}))} />
+              <Input placeholder="To (Destination) — optional"
+                     value={aiFilter.destination}
+                     onChange={e=>setAiFilter(v=>({...v, destination: e.target.value}))} />
+              <Input type="date"
+                     placeholder="Start on/after (optional)"
+                     value={aiFilter.startAfter}
+                     onChange={e=>setAiFilter(v=>({...v, startAfter: e.target.value}))} />
+
+              <Input placeholder="Vessel Weight Cap (optional)"
+                     value={vessel.weightCap}
+                     onChange={e=>setVessel(v=>({...v, weightCap: e.target.value}))} />
+              <Input placeholder="Vessel Volume Cap (optional)"
+                     value={vessel.volumeCap}
+                     onChange={e=>setVessel(v=>({...v, volumeCap: e.target.value}))} />
+
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={getPlanHint} disabled={aiLoading}>
+                  {aiLoading ? 'Getting AI Hint…' : 'AI Plan Hint'}
+                </Button>
+                <Button variant="ghost" onClick={runFFD}>Run FFD Plan</Button>
+              </div>
             </div>
 
             {/* AI Outputs */}
@@ -552,7 +589,7 @@ export default function ShipmentsPage() {
             )}
           </Card>
 
-          <AIConsole title="AI Console — Shipments" defaultUseDb={true} />
+            <AIConsole title="AI Console — Shipments" defaultUseDb={true} />
         </>
       )}
     </div>
