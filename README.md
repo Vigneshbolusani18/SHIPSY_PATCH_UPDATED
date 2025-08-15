@@ -80,8 +80,8 @@ Before you begin, ensure you have the following installed and configured:
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-username/smart-freight-planner.git
-cd smart-freight-planner
+git clone https://github.com/your-username/SHIPSY.git
+cd SHIPSY
 ```
 
 ### 2. Install Dependencies
