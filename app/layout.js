@@ -4,11 +4,12 @@ import { cookies } from 'next/headers'
 import { verifyJWT } from '@/lib/jwt'
 import { prisma } from '@/lib/db'
 import LogoutButton from '@/components/LogoutButton'
+import Link from 'next/link'
 
 export const metadata = { title: 'SHIPSY' }
 
 export default async function RootLayout({ children }) {
-  // Next.js 15 Dynamic APIs require await
+  // Next.js 15 dynamic APIs
   const cookieStore = await cookies()
   const token = cookieStore.get('token')?.value
 
@@ -27,12 +28,12 @@ export default async function RootLayout({ children }) {
       <body className="min-h-screen text-black">
         <header className="sticky top-0 z-50 border-b border-white/10 bg-black/30 backdrop-blur">
           <div className="mx-auto max-w-6xl px-4 flex h-14 items-center justify-between">
-            <a
+            <Link
               href="/"
               className="text-2xl md:text-3xl font-extrabold bg-gradient-to-r from-sky-600 via-cyan-500 to-emerald-400 bg-clip-text text-transparent tracking-wide drop-shadow-lg hover:scale-[1.02] transition-transform"
             >
-              Smart Freight & Storage Planner
-            </a>
+              Smart Freight &amp; Storage Planner
+            </Link>
 
             <nav className="flex items-center gap-3 text-sm">
               {user ? (
@@ -42,8 +43,8 @@ export default async function RootLayout({ children }) {
                 </>
               ) : (
                 <>
-                  <a href="/login" className="btn btn-ghost">Login</a>
-                  <a href="/register" className="btn btn-primary">Sign up</a>
+                  <Link href="/login" className="btn btn-ghost">Login</Link>
+                  <Link href="/register" className="btn btn-primary">Sign up</Link>
                 </>
               )}
             </nav>
