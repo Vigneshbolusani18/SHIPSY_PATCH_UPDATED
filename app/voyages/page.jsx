@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import Card from '@/components/ui/Card'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
+import AIConsole from '@/components/ai/Console' // ✅ added
 
 export default function VoyagesPage() {
   const [items, setItems] = useState([])
@@ -139,7 +140,7 @@ export default function VoyagesPage() {
               {/* Utilization bars */}
               <div className="min-w-[260px]">
                 <div className="text-xs text-[rgb(var(--muted))] mb-1">
-                  Weight Utilization {detail.utilization.weight}% 
+                  Weight Utilization {detail.utilization.weight}%
                   {detail.utilization.capWeightT ? ` (${detail.utilization.usedWeightT}/${detail.utilization.capWeightT} t)` : ` (${detail.utilization.usedWeightT} t)` }
                 </div>
                 <div className="h-2 w-full rounded bg-white/10 overflow-hidden">
@@ -150,7 +151,7 @@ export default function VoyagesPage() {
                 </div>
 
                 <div className="text-xs text-[rgb(var(--muted))] mt-3 mb-1">
-                  Volume Utilization {detail.utilization.volume}% 
+                  Volume Utilization {detail.utilization.volume}%
                   {detail.utilization.capVolumeM3 ? ` (${detail.utilization.usedVolumeM3}/${detail.utilization.capVolumeM3} m³)` : ` (${detail.utilization.usedVolumeM3} m³)` }
                 </div>
                 <div className="h-2 w-full rounded bg-white/10 overflow-hidden">
@@ -198,6 +199,9 @@ export default function VoyagesPage() {
           </div>
         )}
       </Card>
+
+      {/* ✅ AI console added at the bottom, grounded with DB by default */}
+      <AIConsole title="AI Console — Voyages" defaultUseDb={true} />
     </div>
   )
 }
