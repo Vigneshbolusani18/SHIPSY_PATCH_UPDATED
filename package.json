@@ -2,14 +2,14 @@
   "name": "shipsy-assignment",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "postinstall": "prisma generate",
-    "vercel-build": "prisma generate && next build"
-  },
+ "scripts": {
+  "dev": "next dev --turbopack",
+  "build": "next build",
+  "start": "next start",
+  "lint": "next lint",
+  "postinstall": "prisma generate",
+  "vercel-build": "prisma generate && next build"
+ },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.14.0",
