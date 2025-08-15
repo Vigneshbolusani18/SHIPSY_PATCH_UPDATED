@@ -8,8 +8,10 @@
 
 A comprehensive logistics management platform designed to handle **shipments**, **voyages**, **AI-assisted planning**, and **real-time tracking**. Built with modern web technologies including **Next.js App Router**, **Prisma ORM**, **Neon Postgres**, and **Google Gemini API**, beautifully styled with **TailwindCSS** and deployed on **Vercel**.
 
-<div align="center">
-  <img src="https://via.placeholder.com/800x400/1e293b/ffffff?text=Smart+Freight+%26+Storage+Planner" alt="Smart Freight & Storage Planner Screenshot">
+<div>
+  <img src="public/main_page.png" alt="Smart Freight & Storage Planner Screenshot">
+  <img src="public/main_page.png" alt="Smart Freight & Storage Planner Screenshot">
+  <img src="public/main_page.png" alt="Smart Freight & Storage Planner Screenshot">
 </div>
 
 ---
