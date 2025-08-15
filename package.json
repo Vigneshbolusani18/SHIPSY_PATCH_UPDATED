@@ -6,7 +6,11 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+
+    // --- Add these two lines ---
+    "vercel-build": "prisma generate && prisma migrate deploy && next build",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -29,6 +33,5 @@
   },
   "prisma": {
     "seed": "node prisma/seed.js"
-  
-}
+  }
 }
