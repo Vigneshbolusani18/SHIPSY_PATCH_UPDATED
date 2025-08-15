@@ -175,28 +175,27 @@ Intelligent caching system that:
 ### Frontend
 - **Next.js 15.4.6** – React framework with App Router
 - **React 18** – Modern React with concurrent features
-- **TailwindCSS** – Utility-first CSS framework
-- **Headless UI** – Unstyled, accessible UI components
-- **Heroicons** – Beautiful hand-crafted SVG icons
+- **TailwindCSS** – Utility-first CSS framework for styling
+- **ShadCN/UI** – Prebuilt, customizable UI components
+- **Heroicons** – SVG icons for UI elements
 
 ### Backend
-- **Next.js API Routes** – Full-stack React framework
-- **Prisma ORM** – Type-safe database client
-- **Neon Postgres** – Serverless PostgreSQL database
-- **JWT** – Secure authentication
-- **Zod** – TypeScript-first schema validation
+- **Next.js API Routes** – Full-stack API handling
+- **Prisma ORM** – Type-safe database client for PostgreSQL
+- **Neon Postgres** – Serverless PostgreSQL database hosting
+- **JWT** – Secure token-based authentication
+- **Zod** – Schema validation for API payloads
 
 ### AI & Analytics
-- **Google Gemini API** – Large language model integration
-- **Vercel Analytics** – Performance monitoring
-- **Custom ML Models** – Predictive analytics for ETA+
+- **Google Gemini API** – AI-powered planning and recommendations
+- **Vercel Analytics** – Application performance monitoring
 
 ### DevOps & Deployment
 - **Vercel** – Deployment and hosting platform
-- **GitHub Actions** – CI/CD pipeline
-- **ESLint** – Code linting and formatting
+- **GitHub** – Version control and repository hosting
+- **ESLint** – Code linting for consistency
 - **Prettier** – Code formatting
-- **TypeScript** – Type safety and developer experience
+- **TypeScript** – Type safety and better developer experience
 
 ---
 
@@ -235,32 +234,6 @@ Intelligent caching system that:
    - Add your custom domain in Project Settings
    - Update DNS records as instructed
 
-### Alternative Deployment Options
-
-#### Docker Deployment
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-RUN npx prisma generate
-RUN npm run build
-EXPOSE 3000
-CMD ["npm", "start"]
-```
-
-#### Railway Deployment
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Login and deploy
-railway login
-railway init
-railway up
-```
-
 ---
 
 ## 🔐 API Configuration
@@ -284,23 +257,257 @@ railway up
 
 ---
 
-## 📚 API Documentation
+## 📚 API Documentation (Smart Freight & Storage Planner)
 
-### Shipments API
+**Base URL:** `/api`  
+**Auth:** Cookie-based (JWT). Endpoints marked 🔒 require a logged-in user.
+
+---
+
+### 🔐 Authentication
 ```javascript
-// GET /api/shipments - List all shipments
+// POST /auth/register - Create account
+// POST /auth/login - Login (sets httpOnly cookie)
+// POST /auth/logout - Logout (clear cookie)
+// GET /me - 🔒 Current user profile
+```
+
+**Request Examples:**
+```javascript
+// Register/Login
+{ "username": "user@example.com", "password": "securepass123" }
+```
+
+---
+
+### 📦 Shipments API
+```javascript
+// GET /api/shipments - List with filters & pagination
 // POST /api/shipments - Create new shipment
-// PUT /api/shipments/[id] - Update shipment
-// DELETE /api/shipments/[id] - Delete shipment
+// GET /api/shipments/:id - Get single shipment
+// PUT /api/shipments/:id - Update shipment
+// DELETE /api/shipments/:id - Delete shipment
 ```
 
-### Voyages API
+**Query Parameters:**
 ```javascript
-// GET /api/voyages - List all voyages
-// POST /api/voyages - Create new voyage
-// PUT /api/voyages/[id] - Update voyage
-// DELETE /api/voyages/[id] - Delete voyage
+// GET /shipments?page=1&limit=10&sortBy=createdAt&order=desc&q=delhi&status=IN_TRANSIT&isPriority=true
 ```
+
+**Request Body (Create/Update):**
+```javascript
+{
+  "shipmentId": "SHP-001",
+  "origin": "Mumbai",
+  "destination": "Delhi",
+  "shipDate": "2025-08-10",
+  "transitDays": 5,
+  "status": "CREATED",           // CREATED | IN_TRANSIT | DELIVERED | RETURNED
+  "isPriority": false,
+  "weightTons": 12.5,
+  "volumeM3": 28
+}
+```
+
+#### Tracking Events
+```javascript
+// GET /api/shipments/:id/events - List tracking events for a shipment
+// POST /api/shipments/:id/events - Append tracking event
+```
+
+**Tracking Event Body:**
+```javascript
+{
+  "eventType": "PICKUP_COMPLETED",
+  "location": "Mumbai Port",
+  "notes": "Loaded successfully",
+  "occurredAt": "2025-08-10T10:30:00Z"
+}
+```
+
+#### Movement Operations
+```javascript
+// POST /api/shipments/move - Move/assign shipment to voyage
+```
+
+**Move Request:**
+```javascript
+{ "shipmentId": "SHP-001", "voyageId": "VG-120" }
+```
+
+---
+
+### 🛳️ Voyages API
+```javascript
+// GET /api/voyages - List voyages
+// POST /api/voyages - Create new voyage
+// GET /api/voyages/:id - Voyage detail + assigned shipments + utilization
+```
+
+**Query Parameters:**
+```javascript
+// GET /voyages?q=VG-120  (search by code/vessel/origin/destination)
+```
+
+**Request Body (Create/Update):**
+```javascript
+{
+  "voyageCode": "VG-120",
+  "vesselName": "Ever Sea",
+  "origin": "Mumbai",
+  "destination": "Dubai",
+  "departAt": "2025-08-12",
+  "arriveBy": "2025-08-18",
+  "weightCapT": 500,
+  "volumeCapM3": 1200
+}
+```
+
+#### Per-Voyage Operations
+```javascript
+// POST /api/voyages/:id/assign - Assign shipment to voyage
+// POST /api/voyages/:id/plan - Generate voyage load plan (FFD-style)
+```
+
+**Assignment Request:**
+```javascript
+{ "shipmentId": "SHP-001" }
+```
+
+#### Bulk Planning
+```javascript
+// POST /api/voyages/auto-assign - Rule-based assignment
+// POST /api/voyages/ai-assign - AI-assisted assignment
+```
+
+---
+
+### 🧮 Planning API
+```javascript
+// POST /api/plan/ffd - First-Fit Decreasing planner
+```
+
+**FFD Request:**
+```javascript
+{
+  "vessel": { "weightCap": 300, "volumeCap": 800 },
+  "shipments": [/* shipment array */],
+  "filters": {
+    "origin": "Mumbai",
+    "destination": "Delhi",
+    "startAfter": "2025-08-10"
+  }
+}
+```
+
+---
+
+### 🤖 AI Console & Insights API
+```javascript
+// POST /api/ai/answer - Natural language Q&A (primary endpoint)
+// POST /api/ai/chat - Simple chat-style helper
+// POST /api/ai/plan-hint - Get AI planning suggestions
+// POST /api/ai/predict-delay - ETA/delay reasoning
+// POST /api/ai/test - (Dev) Minimal echo test
+```
+
+**AI Answer Request:**
+```javascript
+{
+  "message": "Show me shipments from Mumbai in transit",
+  "useDb": true
+}
+```
+
+**Delay Prediction Request:**
+```javascript
+{
+  "origin": "Mumbai",
+  "destination": "Delhi",
+  "shipDate": "2025-08-10",
+  "transitDays": 5
+}
+```
+
+---
+
+### 📊 Statistics API
+```javascript
+// GET /api/stats/overview - Cached snapshot (totals, status breakdown, top lanes)
+```
+
+**Response Format:**
+```javascript
+{
+  "version": "v1692123456789",
+  "shipments": {
+    "total": 150,
+    "byStatus": { "CREATED": 45, "IN_TRANSIT": 80, "DELIVERED": 25 },
+    "priorityCount": 32,
+    "topLanes": [{ "lane": "Mumbai→Delhi", "count": 25 }]
+  },
+  "voyages": {
+    "total": 12,
+    "active": 5,
+    "upcoming": 3
+  }
+}
+```
+
+---
+
+### ✅ API Conventions
+
+- **Format:** All endpoints return JSON
+- **Dates:** ISO 8601 strings (`2025-08-10T10:30:00Z`)
+- **Pagination:** Returns `{ items: [], total: number }`
+- **Errors:** `{ error: "message" }` with proper HTTP status codes
+- **Status Codes:**
+  - `200` - Success
+  - `201` - Created
+  - `400` - Bad Request
+  - `401` - Unauthorized
+  - `404` - Not Found
+  - `500` - Server Error
+
+---
+
+### 🚀 Quick Start Examples
+
+**Natural Language Query:**
+```javascript
+POST /api/ai/answer
+{
+  "message": "How many shipments are in transit from Mumbai?",
+  "useDb": true
+}
+```
+
+**Create Shipment:**
+```javascript
+POST /api/shipments
+{
+  "shipmentId": "SHP-001",
+  "origin": "Mumbai",
+  "destination": "Delhi",
+  "shipDate": "2025-08-15",
+  "transitDays": 3,
+  "weightTons": 25.5,
+  "volumeM3": 45.2
+}
+```
+
+**AI Planning Assistance:**
+```javascript
+POST /api/ai/plan-hint
+{
+  "filters": {
+    "origin": "Mumbai",
+    "status": "CREATED"
+  }
+}
+```
+---
 
 ### AI Console API
 ```javascript
@@ -328,15 +535,180 @@ npm run test:e2e
 npm run test:coverage
 ```
 
-### Test Configuration
+## 🧪 AI Test/Health Endpoint
+
+### GET /api/ai/test
+
+**Purpose:** Quick health check for your Gemini AI integration.
+
+```javascript
+// GET /api/ai/test - Simple health check
+```
+
+**Response:**
+- **200 OK:** `{ "ok": true, "reply": "..." }` when model responds successfully
+- **429 Rate Limited:** `{ "ok": false, "error": "quota exceeded" }` 
+- **500 Server Error:** `{ "ok": false, "error": "ai_error" }`
+
+**cURL Example:**
+```bash
+curl -s http://localhost:3000/api/ai/test | jq
+```
+
+---
+
+### POST /api/ai/test
+
+**Purpose:** Send a lightweight prompt through `askGeminiWithRetry` helper with concise system instruction.
+
+```javascript
+// POST /api/ai/test - Custom message test
+// Content-Type: application/json
+// Body: { "message": "Your question" }
+```
+
+**Request Body:**
+```javascript
+{
+  "message": "Your test question or prompt"
+}
+```
+
+**Response:**
+- **200 OK:** `{ "ok": true, "reply": "AI response..." }`
+- **400 Bad Request:** `{ "ok": false, "error": "Missing message" }`
+- **429 Rate Limited:** `{ "ok": false, "error": "quota exceeded" }`
+- **500 Server Error:** `{ "ok": false, "error": "ai_error" }`
+
+**cURL Example:**
+```bash
+curl -s -X POST http://localhost:3000/api/ai/test \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Ping from CLI"}' | jq
+```
+
+---
+
+### 🔧 Requirements
+
+#### Environment Setup
+```javascript
+// Required environment variable
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+**Vercel Setup:**
+```
+Project → Settings → Environment Variables
+Add: GEMINI_API_KEY = your_key
+```
+
+#### Code Dependencies
+Your `lib/ai` must export:
+```javascript
+// lib/ai.js
+export async function askGeminiWithRetry(prompt: string): Promise<string>
+export function isQuotaError(e: unknown): boolean
+```
+
+#### Next.js Configuration
+```javascript
+// Route configuration (already handled)
+export const runtime = "nodejs";  // Required for Gemini SDK
+```
+
+---
+
+### 📊 Typical Responses
+
+#### ✅ Success Response
+```javascript
+// GET /api/ai/test
+{
+  "ok": true,
+  "reply": "System is operational. AI model responding correctly."
+}
+
+// POST /api/ai/test
+{
+  "ok": true,
+  "reply": "Pong! Your message was received and processed."
+}
+```
+
+#### ⚠️ Rate Limit Response
+```javascript
+{
+  "ok": false,
+  "error": "quota exceeded",
+  "statusCode": 429,
+  "details": "Gemini API rate limit reached"
+}
+```
+
+#### ❌ Error Response
+```javascript
+{
+  "ok": false,
+  "error": "ai_error",
+  "statusCode": 500,
+  "details": "Failed to connect to Gemini API"
+}
+```
+
+---
+
+### 🧪 Test Configuration
+
+#### Jest Setup
 ```javascript
 // jest.config.js
 module.exports = {
   testEnvironment: 'node',
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
-  testMatch: ['**/__tests__/**/*.test.js']
+  testMatch: ['**/__tests__/**/*.test.js'],
+  collectCoverageFrom: [
+    'app/api/**/*.js',
+    'lib/**/*.js',
+    '!**/*.config.js'
+  ]
 }
 ```
+
+#### Test Environment Setup
+```javascript
+// tests/setup.js
+process.env.GEMINI_API_KEY = 'test-key-mock'
+process.env.NODE_ENV = 'test'
+
+// Mock fetch for testing
+global.fetch = jest.fn()
+```
+
+### 🔍 Debugging Tips
+
+#### Check Environment
+```bash
+# Verify API key is set
+echo $GEMINI_API_KEY
+
+# Test connectivity
+curl -s http://localhost:3000/api/ai/test
+```
+
+#### Monitor Logs
+```javascript
+// Add to your route for debugging
+console.log('Gemini API Key present:', !!process.env.GEMINI_API_KEY)
+console.log('Request method:', request.method)
+console.log('AI Response received:', response?.length || 0, 'characters')
+```
+
+#### Common Issues
+- **Missing API Key:** Set `GEMINI_API_KEY` in environment
+- **Rate Limits:** Implement exponential backoff
+- **Network Issues:** Check firewall/proxy settings
+- **Timeout Errors:** Increase request timeout values
 
 ---
 
@@ -419,15 +791,10 @@ npm run build
 
 ---
 
-## 👤 Author & Team
+## 👤 Author 
+[Vignesh Bolusani](https://github.com/Vigneshbolusani18)  
+📧 vigneshbolusani661@gmail.com  
 
-**Project Lead**  
-[Your Name](https://github.com/your-username)  
-📧 your.email@example.com  
-🐦 [@yourtwitterhandle](https://twitter.com/yourtwitterhandle)
-
-**Contributors**  
-Thanks to all the [contributors](https://github.com/your-username/smart-freight-planner/contributors) who have helped build this project.
 
 ---
 
@@ -468,14 +835,6 @@ If you found this project helpful, please consider:
 - 📢 Sharing with your network
 
 ---
-
-## 📞 Contact & Support
-
-- **Documentation**: [docs.smart-freight-planner.com](https://docs.smart-freight-planner.com)
-- **Issues**: [GitHub Issues](https://github.com/your-username/smart-freight-planner/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-username/smart-freight-planner/discussions)
-- **Email**: support@smart-freight-planner.com
-- **Discord**: [Join our community](https://discord.gg/smart-freight-planner)
 
 ---
 
