@@ -10,8 +10,8 @@ A comprehensive logistics management platform designed to handle **shipments**, 
 
 <div>
   <img src="public/main_page.png" alt="Smart Freight & Storage Planner Screenshot">
-  <img src="public/main_page.png" alt="Smart Freight & Storage Planner Screenshot">
-  <img src="public/main_page.png" alt="Smart Freight & Storage Planner Screenshot">
+  <img src="public/shipments.png" alt="Smart Freight & Storage Planner Screenshot">
+  <img src="public/voyages.png" alt="Smart Freight & Storage Planner Screenshot">
 </div>
 
 ---
@@ -19,7 +19,7 @@ A comprehensive logistics management platform designed to handle **shipments**, 
 ## 🌐 Live Demo
 
 Try it online:  
-[🔗 Live Web App](https://smart-freight-planner.vercel.app/)
+[🔗 Live Web App](https://shipsy-rhm5.vercel.app/)
 
 ---
 
