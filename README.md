@@ -842,7 +842,7 @@ If you found this project helpful, please consider:
   <p><strong>Made with ❤️ for the logistics community</strong></p>
   <p>
     <a href="https://smart-freight-planner.vercel.app/">Live Demo</a> •
-    <a href="https://github.com/your-username/smart-freight-planner/issues">Report Bug</a> •
-    <a href="https://github.com/your-username/smart-freight-planner/issues">Request Feature</a>
+    <a href="mailto:vigneshbolusani@gmail.com">Report Bug</a> •
+    <a href="mailto:vigneshbolusani@gmail.com">Request Feature</a>
   </p>
 </div>
