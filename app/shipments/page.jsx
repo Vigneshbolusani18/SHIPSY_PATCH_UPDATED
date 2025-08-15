@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Card from '@/components/ui/Card'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
+import AIConsole from "@/components/ai/Console";
 
 const STATUSES = ['CREATED','IN_TRANSIT','DELIVERED','RETURNED']
 const EVENT_TYPES = ['CREATED','SCANNED','LOADED','DEPARTED','ARRIVED','DELIVERED','DELAYED']
@@ -527,6 +528,9 @@ async function aiAutoAssign() {
           </div>
         )}
       </Card>
+
+      <AIConsole title="AI Console — Shipments" defaultUseDb={true} />
+
     </div>
   )
 }

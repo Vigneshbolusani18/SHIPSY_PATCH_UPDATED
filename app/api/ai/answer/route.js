@@ -1,176 +1,225 @@
 // app/api/ai/answer/route.js
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
-import { askGeminiWithRetry, isQuotaError } from '@/lib/ai';
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { getSnapshotCached } from "@/lib/snapshot";
+import { askGeminiWithRetry, isQuotaError } from "@/lib/ai";
 
-function safeNumber(n, d = 0) {
-  const x = Number(n);
-  return Number.isFinite(x) ? x : d;
-}
+// ---- Small helpers ----
+function norm(s) { return String(s || "").trim(); }
+function ok(text) { return NextResponse.json({ text }); }
+function bad(msg, code = 400) { return NextResponse.json({ error: msg }, { status: code }); }
 
-// Very small “intent” helper for DB-only answers
-function extractCities(text) {
-  // naive split by non-letters; pick words with length >= 3
-  const words = String(text || '').toLowerCase().match(/[a-z]+/g) || [];
-  return Array.from(new Set(words)).filter((w) => w.length >= 3);
-}
+// Enhanced regex patterns
+const reCity = /\b(?:shipments?|loads?)\s+(?:to|from|for|in)\s+([a-z][a-z\s-]{2,})\b/i;
+const reVoyage = /\b(?:voyage(?:\s*code)?|vg)\s*([a-z]{1,6}-\d{1,6})\b/i;
+const reVoyageGeneral = /\b(?:voyage|voyages)\s+(?:details?|info|information|list)\b/i;
+const reVoyageFrom = /\bvoyages?\s+(?:details?|info)?\s*(?:of\s+shipments?)?\s+(?:to|from)\s+([a-z][a-z\s-]{2,})\b/i;
+const reCounts = /\b(how many|count|summary|stats)\b/i;
 
-async function dbOnlyAnswer(message) {
-  const cities = extractCities(message);
+async function answerFromDb(message) {
+  // ---- City / lane first (highest priority) ----
+  const mCity = message.match(reCity);
+  if (mCity) {
+    const token = mCity[1].trim();
+    const found = await prisma.shipment.findMany({
+      where: {
+        OR: [
+          { origin: { contains: token, mode: "insensitive" } },
+          { destination: { contains: token, mode: "insensitive" } },
+          { shipmentId: { contains: token, mode: "insensitive" } },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      take: 25,
+      select: {
+        shipmentId: true, origin: true, destination: true,
+        shipDate: true, transitDays: true, status: true, isPriority: true,
+        weightTons: true, volumeM3: true,
+      },
+    });
+    if (!found.length) return `No shipments matching "${token}".`;
+    return `Shipments for "${token}" (${found.length}):\n` +
+      found.map(s => `• ${s.shipmentId} ${s.origin}→${s.destination} · ${s.status} · ship ${new Date(s.shipDate).toLocaleDateString()} · ${s.transitDays}d · prio:${s.isPriority ? "Y" : "N"} · wt:${s.weightTons ?? "-"}t vol:${s.volumeM3 ?? "-"}m³`).join("\n");
+  }
 
-  // If user asked “show <city> shipments”, try lane/id filter
-  if (cities.length) {
-    for (const token of cities) {
-      const found = await prisma.shipment.findMany({
-        where: {
-          OR: [
-            { origin: { contains: token, mode: 'insensitive' } },
-            { destination: { contains: token, mode: 'insensitive' } },
-            { shipmentId: { contains: token, mode: 'insensitive' } },
-          ],
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 25,
-        select: {
-          id: true,
-          shipmentId: true,
-          status: true,
-          isPriority: true,
-          origin: true,
-          destination: true,
-          shipDate: true,
-          transitDays: true,
-          weightTons: true,
-          volumeM3: true,
-          createdAt: true,
-          assignments: {
-            orderBy: { createdAt: 'desc' }, // <-- fixed (was assignedAt)
-            take: 1,
-            select: {
-              voyage: {
-                select: {
-                  voyageCode: true,
-                  vesselName: true,
-                  origin: true,
-                  destination: true,
-                  departAt: true,
-                  arriveBy: true,
-                },
+  // ---- Voyage details for specific city/route ----
+  const mVoyFrom = message.match(reVoyageFrom);
+  if (mVoyFrom) {
+    const token = mVoyFrom[1].trim();
+    const voyages = await prisma.voyage.findMany({
+      where: {
+        OR: [
+          { origin: { contains: token, mode: "insensitive" } },
+          { destination: { contains: token, mode: "insensitive" } },
+        ],
+      },
+      orderBy: { departAt: "desc" },
+      take: 15,
+      select: {
+        voyageCode: true, vesselName: true, origin: true, destination: true,
+        departAt: true, arriveBy: true,
+        _count: {
+          select: { assignments: true }
+        }
+      },
+    });
+    
+    if (!voyages.length) return `No voyages found for "${token}".`;
+    
+    const voyageList = voyages.map(v => 
+      `• ${v.voyageCode} ${v.vesselName} · ${v.origin}→${v.destination} · ${new Date(v.departAt).toLocaleDateString()}→${new Date(v.arriveBy).toLocaleDateString()} · ${v._count.assignments} shipments`
+    ).join("\n");
+    
+    return `Voyages for "${token}" (${voyages.length}):\n${voyageList}`;
+  }
+
+  // ---- General voyage list ----
+  if (reVoyageGeneral.test(message)) {
+    const voyages = await prisma.voyage.findMany({
+      orderBy: { departAt: "desc" },
+      take: 20,
+      select: {
+        voyageCode: true, vesselName: true, origin: true, destination: true,
+        departAt: true, arriveBy: true,
+        _count: {
+          select: { assignments: true }
+        }
+      },
+    });
+    
+    if (!voyages.length) return "No voyages found.";
+    
+    const voyageList = voyages.map(v => 
+      `• ${v.voyageCode} ${v.vesselName} · ${v.origin}→${v.destination} · ${new Date(v.departAt).toLocaleDateString()}→${new Date(v.arriveBy).toLocaleDateString()} · ${v._count.assignments} shipments`
+    ).join("\n");
+    
+    return `Recent Voyages (${voyages.length}):\n${voyageList}`;
+  }
+
+  // ---- Specific voyage by code ----
+  const mVoy = message.match(reVoyage);
+  if (mVoy) {
+    const code = mVoy[1].toUpperCase();
+    const voy = await prisma.voyage.findFirst({
+      where: { voyageCode: code },
+      select: {
+        voyageCode: true, vesselName: true, origin: true, destination: true,
+        departAt: true, arriveBy: true,
+        assignments: {
+          orderBy: { createdAt: "desc" },
+          select: {
+            shipment: {
+              select: {
+                shipmentId: true, origin: true, destination: true,
+                shipDate: true, transitDays: true, status: true,
+                weightTons: true, volumeM3: true,
               },
             },
           },
+          take: 25,
         },
-      });
-
-      if (found.length) {
-        const lines = found
-          .map((s) => {
-            const v = s.assignments?.[0]?.voyage;
-            const vTxt = v
-              ? ` · Voyage ${v.voyageCode} (${v.vesselName}) ${v.origin}→${v.destination}`
-              : '';
-            return `• ${s.shipmentId} — ${s.origin}→${s.destination} — ${s.status} — ship ${new Date(
-              s.shipDate
-            ).toLocaleDateString()} — ${s.transitDays}d — wt:${s.weightTons ?? '-'}t vol:${
-              s.volumeM3 ?? '-'
-            }m³${vTxt}`;
-          })
-          .join('\n');
-
-        return `**Results for “${token}”** (${found.length})\n${lines}`;
-      }
-    }
+      },
+    });
+    if (!voy) return `No voyage found with code ${code}.`;
+    const list = voy.assignments.map(a => a.shipment)
+      .map(s => `• ${s.shipmentId} ${s.origin}→${s.destination} · ${s.status} · ${new Date(s.shipDate).toLocaleDateString()} · ${s.transitDays}d · wt:${s.weightTons ?? "-"}t vol:${s.volumeM3 ?? "-"}m³`)
+      .join("\n") || "(no assigned shipments)";
+    return `Voyage ${voy.voyageCode} — ${voy.vesselName}\nLane: ${voy.origin}→${voy.destination}\nWindow: ${new Date(voy.departAt).toLocaleDateString()} → ${new Date(voy.arriveBy).toLocaleDateString()}\n\nAssigned:\n${list}`;
   }
 
-  // default snapshot if no direct match
-  const [total, byStatus, priorityCount] = await Promise.all([
-    prisma.shipment.count(),
-    prisma.shipment.groupBy({ by: ['status'], _count: { status: true } }),
-    prisma.shipment.count({ where: { isPriority: true } }),
-  ]);
-  const statusLine =
-    byStatus.map((s) => `${s.status}:${s._count.status}`).join(', ') || 'none';
+  // ---- Quick stats ----
+  if (reCounts.test(message)) {
+    const snap = await getSnapshotCached();
+    const byStatus = Object.entries(snap.shipments.byStatus).map(([k,v]) => `${k}:${v}`).join(", ") || "none";
+    const voyageStats = snap.voyages ? `\n• Total voyages: ${snap.voyages.total}\n• Active voyages: ${snap.voyages.active}` : "";
+    return `Snapshot:\n• Total shipments: ${snap.shipments.total}\n• By status: ${byStatus}\n• Priority: ${snap.shipments.priorityCount}${voyageStats}`;
+  }
 
-  return `I couldn’t match a city/term in your question. Quick snapshot:
-• Total shipments: ${total}
-• By status: ${statusLine}
-• Priority: ${priorityCount}
-Try: “show delhi shipments”, “shipments to mumbai”, or “SHP-001”.`;
+  return null; // not handled here
 }
 
 export async function POST(req) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const { message, useDb } = body || {};
-    if (!message || typeof message !== 'string') {
-      return NextResponse.json({ error: 'Missing message' }, { status: 400 });
+    const { message, useDb } = await req.json();
+    const msg = norm(message);
+    if (!msg) return bad("Missing message");
+
+    // 1) Try DB-only intents first (fast, no AI)
+    const handled = await answerFromDb(msg);
+    if (handled) return ok(handled);
+
+    // 2) If client wants DB-only, return a guided summary (still no AI)
+    if (useDb) {
+      const snap = await getSnapshotCached();
+      const byStatus = Object.entries(snap.shipments.byStatus).map(([k,v]) => `${k}:${v}`).join(", ") || "none";
+      const voyageInfo = snap.voyages ? `, Voyages ${snap.voyages.total}` : "";
+      return ok(
+        `DB summary (no AI): Total ${snap.shipments.total}, Priority ${snap.shipments.priorityCount}, By status ${byStatus}${voyageInfo}.\n` +
+        `Tip: ask "shipments to delhi", "voyage VG-100", "voyage details", or "voyages from mumbai".`
+      );
     }
 
-    // If not grounding with DB, just proxy to Gemini (with clear quota msg)
-    if (!useDb) {
-      try {
-        const raw = await askGeminiWithRetry(message);
-        return NextResponse.json({ text: raw });
-      } catch (e) {
-        if (isQuotaError(e)) {
-          return NextResponse.json(
-            {
-              text:
-                "AI quota exceeded. Try again later or enable 'Use database' to get a local (non-AI) answer.",
-            },
-            { status: 200 }
-          );
-        }
-        throw e;
-      }
-    }
-
-    // Grounded path: try AI first, but on quota fall back to DB-only
-    try {
-      const [total, byStatus, priorityCount] = await Promise.all([
-        prisma.shipment.count(),
-        prisma.shipment.groupBy({ by: ['status'], _count: { status: true } }),
-        prisma.shipment.count({ where: { isPriority: true } }),
-      ]);
-
-      const context = {
-        now: new Date().toISOString(),
-        shipments: {
-          total,
-          byStatus: Object.fromEntries(
-            byStatus.map((s) => [s.status, s._count.status])
-          ),
-          priorityCount,
-        },
-      };
-
-      const prompt = `
+    // 3) Otherwise call AI with a SMALL cached context (now including voyage data)
+    const snap = await getSnapshotCached();
+    const prompt = `
 Answer the user's logistics question using ONLY the provided JSON context when possible.
-If you need shipment details for a specific city/lane, reply: "Switch to DB search mode".
+If you need specific shipment details for a city/lane or a specific voyage that's not in context, respond exactly:
+"Switch to DB search mode".
 
-USER: ${message}
+USER:
+${msg}
 
-CONTEXT:
+CONTEXT (JSON):
 \`\`\`json
-${JSON.stringify(context, null, 2)}
+${JSON.stringify({
+  version: snap.version,
+  shipments: {
+    total: snap.shipments.total,
+    byStatus: snap.shipments.byStatus,
+    priorityCount: snap.shipments.priorityCount,
+    topLanes: snap.shipments.topLanes,
+    recent: snap.shipments.recent, // ~15 items only
+  },
+  voyages: snap.voyages || null, // Include voyage data if available
+}, null, 2)}
 \`\`\`
-`;
-      const raw = await askGeminiWithRetry(prompt);
-      return NextResponse.json({ text: raw });
+
+Keep answers under 120 words. Prefer bullets for readability.
+`.trim();
+
+    try {
+      const text = await askGeminiWithRetry(prompt);
+
+      // If the model asks us to switch, immediately run the DB search path:
+      if (/switch to db search mode/i.test(text)) {
+        const fallback = await answerFromDb(msg);
+        if (fallback) return ok(fallback);
+        // if still nothing, return a helpful snapshot
+        const byStatus = Object.entries(snap.shipments.byStatus).map(([k,v]) => `${k}:${v}`).join(", ") || "none";
+        const voyageInfo = snap.voyages ? `, Voyages ${snap.voyages.total}` : "";
+        return ok(
+          `No direct match found. Snapshot: Total ${snap.shipments.total}, Priority ${snap.shipments.priorityCount}, By status ${byStatus}${voyageInfo}.`
+        );
+      }
+
+      return ok(text);
     } catch (e) {
       if (isQuotaError(e)) {
-        const text = await dbOnlyAnswer(message);
-        return NextResponse.json({ text });
+        // graceful fallback on quota/rate limit
+        const fallback = await answerFromDb(msg);
+        if (fallback) return ok(fallback);
+        const byStatus = Object.entries(snap.shipments.byStatus).map(([k,v]) => `${k}:${v}`).join(", ") || "none";
+        const voyageInfo = snap.voyages ? `, Voyages ${snap.voyages.total}` : "";
+        return ok(
+          `AI quota exceeded. DB snapshot: Total ${snap.shipments.total}, Priority ${snap.shipments.priorityCount}, By status ${byStatus}${voyageInfo}.`
+        );
       }
       throw e;
     }
   } catch (e) {
-    console.error('POST /api/ai/answer error', e);
-    return NextResponse.json(
-      { error: e?.message || 'AI answer error' },
-      { status: e?.status || 500 }
-    );
+    console.error("POST /api/ai/answer error", e);
+    return NextResponse.json({ error: e?.message || "AI answer error" }, { status: 500 });
   }
 }
