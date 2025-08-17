@@ -30,7 +30,7 @@ Try it online:
 
 ## 📚 Documentation
 
-- [Overview](docs/README.md) – high-level intro
+- [Overview](README.md) – high-level intro
 - [User Guide](docs/USER_GUIDE.md) – complete user documentation
 - [API Reference](docs/API.md) – endpoints and usage
 - [Database Schema](docs/SCHEMA.md) – Prisma/Postgres schema
