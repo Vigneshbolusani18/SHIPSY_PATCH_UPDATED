@@ -28,6 +28,25 @@ Try it online:
 
 ---
 
+## 📚 Documentation
+
+- [Overview](docs/README.md) – high-level intro
+- [User Guide](docs/USER_GUIDE.md) – complete user documentation
+- [API Reference](docs/API.md) – endpoints and usage
+- [Database Schema](docs/SCHEMA.md) – Prisma/Postgres schema
+- [Deployment Guide](docs/DEPLOYMENT.md) – deploy on Vercel/Neon
+- [Security](docs/SECURITY.md) – auth & security notes
+- [Testing](docs/TESTING.md) – how to run tests
+- [Troubleshooting](docs/TROUBLESHOOTING.md) – common issues & fixes
+
+### 🤖 AI
+- [Console API](docs/AI/CONSOLE_API.md)
+- [Snapshot Caching](docs/AI/SNAPSHOT_CACHING.md)
+- [AI Screenshots](docs/AI/AI_Screenshots.md)
+
+---
+
+
 ## ✨ Key Features
 
 ### 📦 Shipment Management
@@ -730,13 +749,22 @@ npm run format      # Format code with Prettier
 
 ---
 
-## 📖 Documentation
+## 📚 Documentation
 
-- [User Guide](docs/USER_GUIDE.md) - Complete user documentation
-- [API Reference](docs/API.md) - Detailed API documentation
-- [Deployment Guide](docs/DEPLOYMENT.md) - Advanced deployment options
-- [Contributing Guide](CONTRIBUTING.md) - How to contribute
-- [Changelog](CHANGELOG.md) - Version history
+- [Overview](docs/README.md) – high-level intro
+- [User Guide](docs/USER_GUIDE.md) – complete user documentation
+- [API Reference](docs/API.md) – endpoints and usage
+- [Database Schema](docs/SCHEMA.md) – Prisma/Postgres schema
+- [Deployment Guide](docs/DEPLOYMENT.md) – deploy on Vercel/Neon
+- [Security](docs/SECURITY.md) – auth & security notes
+- [Testing](docs/TESTING.md) – how to run tests
+- [Troubleshooting](docs/TROUBLESHOOTING.md) – common issues & fixes
+
+### 🤖 AI
+- [Console API](docs/AI/CONSOLE_API.md)
+- [Snapshot Caching](docs/AI/SNAPSHOT_CACHING.md)
+- [AI Screenshots](docs/AI/AI_Screenshots.md)
+
 
 ---
 
