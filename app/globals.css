@@ -1,7 +1,7 @@
 /* Tailwind v4 core */
 @import "tailwindcss";
 
-/* Theme tokens (Tailwind v4 uses @theme) */
+/* Theme tokens */
 @theme {
   --color-brand-50:  #eef6ff;
   --color-brand-100: #d9ebff;
@@ -22,18 +22,30 @@
   --muted: 160 164 175;
 }
 
+/* Anti-flicker */
+html {
+  scroll-behavior: smooth;
+  background-color: rgb(var(--bg)); /* prevents white flash */
+}
 html, body { height: 100%; }
 
 body {
   min-height: 100vh;
   background-color: rgb(var(--bg));
   color: rgb(var(--fg));
-    background-image: url('/bg.jpg');
-  background-size: cover;
-  background-position: center;
 }
 
-/* Reusable primitives */
+/* Page transition */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
+
+/* Optional helper */
+.animation-delay-150 { animation-delay: 150ms; }
+
+/* Primitives */
 .card {
   @apply bg-white/25 backdrop-blur border border-white/10 rounded-2xl shadow-lg;
 }
@@ -48,7 +60,43 @@ body {
 
 a { @apply underline decoration-white/20 underline-offset-4 hover:decoration-brand-500; }
 
-/* Make all text black by default */
-html, body {
-  color: black !important;
+/* ⛔️ Removed the global "color: black !important" override — this caused visible flashes */
+
+/* ==== Dynamic background support (CSS-vars only, no flicker) ==== */
+/* ==== Dynamic background (fixed, no flicker) ==== */
+body.has-dynamic-bg {
+  /* Vars set by <DynamicBackground/> */
+  --dynamic-bg-image: none;          /* e.g. url("/login.webp") */
+  --dynamic-bg-position: center;
+  --dynamic-bg-size: cover;
+  --dynamic-bg-repeat: no-repeat;
+  --dynamic-bg-overlay: none;        /* e.g. linear-gradient(...) */
+  --dynamic-bg-blur: 0px;
+
+  /* Do NOT draw the image on <body> itself (prevents scroll) */
+  background: transparent;
+}
+
+/* One fixed layer behind all content: gradient overlay + image */
+body.has-dynamic-bg::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+
+  /* Layer 1 (top): overlay gradient; Layer 2: photo */
+  background-image: var(--dynamic-bg-overlay), var(--dynamic-bg-image);
+  background-position: 0 0, var(--dynamic-bg-position);
+  background-size: auto, var(--dynamic-bg-size);
+  background-repeat: no-repeat, var(--dynamic-bg-repeat);
+
+  /* Make it a composited layer for smoothness */
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+/* Optional: if you want blur on the background only (not content) */
+body.has-dynamic-bg::before {
+  /* comment out if you don't use blur */
+  backdrop-filter: blur(var(--dynamic-bg-blur));
 }

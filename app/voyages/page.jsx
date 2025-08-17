@@ -4,6 +4,7 @@ import Card from '@/components/ui/Card'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
 import AIConsole from '@/components/ai/Console' // ✅ added
+import DynamicBackground from '@/components/DynamicBackground'
 
 export default function VoyagesPage() {
   const [items, setItems] = useState([])
@@ -48,6 +49,12 @@ export default function VoyagesPage() {
 
   return (
     <div className="grid gap-6">
+       <DynamicBackground
+                    image="/bg.jpg"                                /* put file in /public/login.webp */
+                    overlay="linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.55))"
+                    blur="0px"
+                    attachment="fixed"                                  /* stays while scrolling */
+                  />
       <Card title="Voyages">
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <Input placeholder="Search voyages…" value={q} onChange={e=>setQ(e.target.value)} />

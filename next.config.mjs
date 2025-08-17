@@ -1,9 +1,14 @@
-// next.config.js
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
+  // Remove swcMinify - it's deprecated
+  // swcMinify: true,
+  
+  experimental: {
+    // Remove typedRoutes for Turbopack compatibility
+    // typedRoutes: true,
+    optimizeCss: true,
+    scrollRestoration: true,
   },
-};
+}
 
-export default nextConfig;
+export default nextConfig

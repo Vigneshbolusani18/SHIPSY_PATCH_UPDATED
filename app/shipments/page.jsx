@@ -5,13 +5,47 @@ import Card from '@/components/ui/Card'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
 import AIConsole from '@/components/ai/Console'
+import DynamicBackground from '@/components/DynamicBackground'
+
 
 const STATUSES = ['CREATED','IN_TRANSIT','DELIVERED','RETURNED']
 const EVENT_TYPES = ['CREATED','SCANNED','LOADED','DEPARTED','ARRIVED','DELIVERED','DELAYED']
 
+// ---- Helpers
+function parseAssignMessages(messages = []) {
+  const pairs = []
+  const r = /✅\s*([\w.-]+)[^\n]*?(?:assigned\s*to|→)\s*([\w.-]+)/i
+  for (const m of messages) {
+    const mm = String(m || '').match(r)
+    if (mm) pairs.push({ shipmentId: mm[1], voyageCode: mm[2] })
+  }
+  return pairs
+}
+function coercePairsFromPayload(data = {}, messages = []) {
+  const out = []
+  const pushArr = (arr) => {
+    if (Array.isArray(arr)) {
+      for (const x of arr) {
+        if (x && typeof x === 'object') {
+          const sid = x.shipmentId ?? x.shipId ?? x.ship ?? x.ShipmentId
+          const voy = x.voyageCode ?? x.voyCode ?? x.voy ?? x.VoyageCode
+          if (sid && voy) out.push({ shipmentId: String(sid), voyageCode: String(voy) })
+        }
+      }
+    }
+  }
+  pushArr(data.pairs)
+  pushArr(data.assignedPairs)
+  pushArr(data.assignments)
+  pushArr(data.suggestions)
+  if (!out.length) return parseAssignMessages(messages)
+  return out
+}
+const fmtTime = (ts) => new Date(ts).toLocaleString()
+
 export default function ShipmentsPage() {
   // ----- Tabs -----
-  const [tab, setTab] = useState('add') // 'add' | 'manage' | 'ai'
+  const [tab, setTab] = useState('add') // 'add' | 'manage' | 'ai' | 'warnings'
 
   // list/query state
   const [items, setItems] = useState([])
@@ -24,7 +58,7 @@ export default function ShipmentsPage() {
   const [sortBy, setSortBy] = useState('createdAt')
   const [order, setOrder] = useState('desc')
 
-  // create form (includes weight & volume)
+  // create form
   const [form, setForm] = useState({
     shipmentId: '', origin: '', destination: '',
     shipDate: '', transitDays: 7, status: 'CREATED', isPriority: false,
@@ -45,12 +79,8 @@ export default function ShipmentsPage() {
   const [etaResultId, setEtaResultId] = useState(null)
   const [etaResult, setEtaResult] = useState('')
 
-  // lane/date filters for AI tools
-  const [aiFilter, setAiFilter] = useState({
-    origin: '',
-    destination: '',
-    startAfter: '', // YYYY-MM-DD
-  })
+  // filters for AI tools
+  const [aiFilter, setAiFilter] = useState({ origin:'', destination:'', startAfter:'' })
 
   // Voyages quick actions state
   const [showVoyageForm, setShowVoyageForm] = useState(false)
@@ -61,6 +91,10 @@ export default function ShipmentsPage() {
 
   // FFD result
   const [ffdOut, setFfdOut] = useState(null)
+
+  // Reports for warnings tab
+  const [reports, setReports] = useState([])
+  // report: { id, time, source: 'assign'|'ai-assign'|'auto'|'ai', assigned, processed, pairs:[], messages:[] }
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / limit)), [total, limit])
 
@@ -76,28 +110,19 @@ export default function ShipmentsPage() {
     setItems(data.items || [])
     setTotal(data.total || 0)
   }
-
   useEffect(() => { load() }, [page, limit, q, status, isPriority, sortBy, order])
 
   async function createShipment(e) {
     e.preventDefault()
     const res = await fetch('/api/shipments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),
     })
     if (res.ok) {
-      setForm({
-        shipmentId: '', origin: '', destination: '',
-        shipDate: '', transitDays: 7, status: 'CREATED', isPriority: false,
-        weightTons: '', volumeM3: ''
-      })
-      setPage(1)
-      load()
-      setTab('manage')
+      setForm({ shipmentId:'', origin:'', destination:'', shipDate:'', transitDays:7, status:'CREATED', isPriority:false, weightTons:'', volumeM3:'' })
+      setPage(1); load(); setTab('manage')
     } else {
-      const err = await res.json().catch(()=>({}))
-      alert(err.error || 'Create failed')
+      const err = await res.json().catch(()=>({})); alert(err.error || 'Create failed')
     }
   }
 
@@ -109,26 +134,20 @@ export default function ShipmentsPage() {
   async function del(id) {
     if (!confirm('Delete this shipment?')) return
     const res = await fetch(`/api/shipments/${id}`, { method: 'DELETE' })
-    if (res.ok) {
-      if (openShipmentId === id) { setOpenShipmentId(null); setEvents([]) }
-      load()
-    } else {
-      alert('Delete failed')
-    }
+    if (res.ok) { if (openShipmentId === id) { setOpenShipmentId(null); setEvents([]) } load() }
+    else alert('Delete failed')
   }
 
   // ---- Tracking Events ----
   async function openEvents(s) {
     setOpenShipmentId(s.id)
-    setEvForm({ eventType: 'SCANNED', location: s.destination || '', notes: '', occurredAt: '' })
+    setEvForm({ eventType:'SCANNED', location:s.destination || '', notes:'', occurredAt:'' })
     setEvLoading(true)
     try {
       const res = await fetch(`/api/shipments/${s.id}/events`)
       const data = await res.json()
       setEvents(data.items || [])
-    } finally {
-      setEvLoading(false)
-    }
+    } finally { setEvLoading(false) }
   }
 
   async function addEvent(e) {
@@ -137,76 +156,56 @@ export default function ShipmentsPage() {
     setEvLoading(true)
     try {
       const res = await fetch(`/api/shipments/${openShipmentId}/events`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(evForm),
       })
       if (res.ok) {
-        setEvForm({ eventType: 'SCANNED', location: '', notes: '', occurredAt: '' })
+        setEvForm({ eventType:'SCANNED', location:'', notes:'', occurredAt:'' })
         const r2 = await fetch(`/api/shipments/${openShipmentId}/events`)
         const d2 = await r2.json()
         setEvents(d2.items || [])
-      } else {
-        alert('Failed to add event')
-      }
-    } finally {
-      setEvLoading(false)
-    }
+      } else { alert('Failed to add event') }
+    } finally { setEvLoading(false) }
   }
 
-  // ---- Gemini ----
+  // ---- Gemini helpers ----
   async function getPlanHint() {
     try {
-      setAiLoading(true)
-      setAiHint('Thinking…')
+      setAiLoading(true); setAiHint('Thinking…')
       const payload = {
         vessel: {
           weightCap: vessel.weightCap ? Number(vessel.weightCap) : undefined,
           volumeCap: vessel.volumeCap ? Number(vessel.volumeCap) : undefined,
         },
         shipments: items.map(s => ({
-          id: s.id, shipmentId: s.shipmentId, status: s.status, isPriority: s.isPriority,
-          origin: s.origin, destination: s.destination, shipDate: s.shipDate, transitDays: s.transitDays,
-          weightTons: s.weightTons ?? null, volumeM3: s.volumeM3 ?? null,
+          id:s.id, shipmentId:s.shipmentId, status:s.status, isPriority:s.isPriority,
+          origin:s.origin, destination:s.destination, shipDate:s.shipDate, transitDays:s.transitDays,
+          weightTons:s.weightTons ?? null, volumeM3:s.volumeM3 ?? null,
         })),
-        // NEW: lane/date filters
-        filters: {
-          origin: aiFilter.origin || undefined,
-          destination: aiFilter.destination || undefined,
-          startAfter: aiFilter.startAfter || undefined,
-        }
+        filters: { origin: aiFilter.origin || undefined, destination: aiFilter.destination || undefined, startAfter: aiFilter.startAfter || undefined }
       }
-      const res = await fetch('/api/ai/plan-hint', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
+      const res = await fetch('/api/ai/plan-hint', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) })
       const data = await res.json()
       setAiHint(data.hint || data.error || 'No hint')
-    } catch {
-      setAiHint('AI error')
-    } finally {
-      setAiLoading(false)
-    }
+    } catch { setAiHint('AI error') }
+    finally { setAiLoading(false) }
   }
 
   async function predictETA(s) {
     try {
       setEtaLoadingId(s.id); setEtaResultId(s.id); setEtaResult('…')
       const res = await fetch('/api/ai/predict-delay', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origin: s.origin, destination: s.destination, shipDate: s.shipDate, transitDays: s.transitDays })
+        method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ origin:s.origin, destination:s.destination, shipDate:s.shipDate, transitDays:s.transitDays })
       })
       const data = await res.json()
       setEtaResult(data.raw || data.error || 'No response')
-    } catch {
-      setEtaResult('AI error')
-    } finally {
-      setEtaLoadingId(null)
-    }
+    } catch { setEtaResult('AI error') }
+    finally { setEtaLoadingId(null) }
   }
 
   async function runFFD() {
-    setFfdOut({ loading: true })
+    setFfdOut({ loading:true })
     try {
       const payload = {
         vessel: {
@@ -214,102 +213,92 @@ export default function ShipmentsPage() {
           volumeCap: vessel.volumeCap ? Number(vessel.volumeCap) : undefined,
         },
         shipments: items,
-        // NEW: lane/date filters
-        filters: {
-          origin: aiFilter.origin || undefined,
-          destination: aiFilter.destination || undefined,
-          startAfter: aiFilter.startAfter || undefined,
-        }
+        filters: { origin: aiFilter.origin || undefined, destination: aiFilter.destination || undefined, startAfter: aiFilter.startAfter || undefined }
       }
-      const res = await fetch('/api/plan/ffd', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      const res = await fetch('/api/plan/ffd', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) })
       const data = await res.json()
       setFfdOut(data)
-    } catch {
-      setFfdOut({ error: 'Failed to plan' })
-    }
+    } catch { setFfdOut({ error:'Failed to plan' }) }
   }
 
   async function createVoyage(e) {
     e.preventDefault()
     try {
-      const res = await fetch('/api/voyages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(voyageForm),
-      })
+      const res = await fetch('/api/voyages', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(voyageForm) })
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || 'Failed to create voyage')
-        return
+        const err = await res.json().catch(()=>({})); alert(err.error || 'Failed to create voyage'); return
       }
-      setVoyageForm({
-        voyageCode: '', vesselName: '', origin: '', destination: '',
-        departAt: '', arriveBy: '', weightCapT: '', volumeCapM3: ''
-      })
+      setVoyageForm({ voyageCode:'', vesselName:'', origin:'', destination:'', departAt:'', arriveBy:'', weightCapT:'', volumeCapM3:'' })
       setShowVoyageForm(false)
-      alert('Voyage created!')
-      load()
-    } catch (e) {
-      alert('Network error while creating voyage')
-    }
+      alert('Voyage created!'); load()
+    } catch { alert('Network error while creating voyage') }
   }
 
+  // ===== Bulk actions (log to Warnings) =====
   async function autoAssignShipments() {
     try {
       const res = await fetch('/api/voyages/auto-assign', { method: 'POST' })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || 'Auto-assign failed')
-        return
-      }
-      const data = await res.json()
-      alert(`Auto-assigned ${data.count ?? data.assignedCount ?? 0} shipments`)
-      load()
-    } catch (e) {
-      alert('Network error while auto-assigning')
-    }
+      const data = await res.json().catch(()=>({}))
+      if (!res.ok || data.error) return alert(data.error || 'Auto-assign failed')
+
+      const pairs = coercePairsFromPayload(data, data.messages || [])
+      setReports(rs => [
+        {
+          id: crypto.randomUUID(),
+          time: Date.now(),
+          source: 'auto',
+          assigned: data.count ?? data.assignedCount ?? pairs.length ?? 0,
+          processed: data.processed ?? 0,
+          pairs,
+          messages: data.messages || [],
+        },
+        ...rs
+      ])
+      alert(`Auto-assigned ${data.count ?? data.assignedCount ?? pairs.length ?? 0} shipments`)
+      setTab('warnings'); load()
+    } catch { alert('Network error while auto-assigning') }
   }
 
   async function aiAutoAssign() {
-  try {
-    const res = await fetch('/api/voyages/ai-assign', { method: 'POST' });
-    let data = { assigned: 0, processed: 0, messages: [] };
-
     try {
-      const text = await res.text();
-      if (text) data = JSON.parse(text);
-    } catch (_) {}
+      const res = await fetch('/api/voyages/ai-assign', { method: 'POST' })
+      const data = await res.json().catch(()=>({}))
+      const pairs = coercePairsFromPayload(data, data.messages || [])
 
-    alert(
-      `AI assigned ${data.assigned} / ${data.processed}\n\n` +
-      (Array.isArray(data.messages) ? data.messages.join('\n') : '')
-    );
+      setReports(rs => [
+        {
+          id: crypto.randomUUID(),
+          time: Date.now(),
+          source: 'ai',
+          assigned: data.assigned ?? pairs.length ?? 0,
+          processed: data.processed ?? 0,
+          pairs,
+          messages: data.messages || [],
+        },
+        ...rs
+      ])
 
-    load(); // Refresh the list after assigning
-  } catch (e) {
-    alert('AI auto-assign failed');
+      alert(`AI assigned ${data.assigned ?? pairs.length ?? 0} / ${data.processed ?? 0}`)
+      setTab('warnings'); load()
+    } catch { alert('AI auto-assign failed') }
   }
-}
-
 
   const baseInput = "input w-full"
 
   return (
     <div className="grid gap-6">
+      <DynamicBackground
+              image="/login.webp"                                /* put file in /public/login.webp */
+              overlay="linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.55))"
+              blur="0px"
+              attachment="fixed"                                  /* stays while scrolling */
+            />
       {/* ===== Top Tabs ===== */}
       <div className="card p-2 flex gap-2">
-        <button className={`btn ${tab==='add' ? '' : 'btn-ghost'}`} onClick={() => setTab('add')}>
-          Add Shipment
-        </button>
-        <button className={`btn ${tab==='manage' ? '' : 'btn-ghost'}`} onClick={() => setTab('manage')}>
-          Manage Shipments
-        </button>
-        <button className={`btn ${tab==='ai' ? '' : 'btn-ghost'}`} onClick={() => setTab('ai')}>
-          AI
-        </button>
+        <button className={`btn ${tab==='add' ? '' : 'btn-ghost'}`} onClick={() => setTab('add')}>Add Shipment</button>
+        <button className={`btn ${tab==='manage' ? '' : 'btn-ghost'}`} onClick={() => setTab('manage')}>Manage Shipments</button>
+        <button className={`btn ${tab==='ai' ? '' : 'btn-ghost'}`} onClick={() => setTab('ai')}>AI</button>
+        <button className={`btn ${tab==='warnings' ? '' : 'btn-ghost'}`} onClick={() => setTab('warnings')}>Warnings</button>
       </div>
 
       {/* ===== ADD SHIPMENT ===== */}
@@ -329,21 +318,8 @@ export default function ShipmentsPage() {
               Priority
             </label>
 
-            {/* Weight & Volume */}
-            <Input
-              type="number"
-              step="0.01"
-              placeholder="Weight (tons)"
-              value={form.weightTons ?? ''}
-              onChange={e => setForm({ ...form, weightTons: e.target.value })}
-            />
-            <Input
-              type="number"
-              step="0.01"
-              placeholder="Volume (m³)"
-              value={form.volumeM3 ?? ''}
-              onChange={e => setForm({ ...form, volumeM3: e.target.value })}
-            />
+            <Input type="number" step="0.01" placeholder="Weight (tons)" value={form.weightTons ?? ''} onChange={e => setForm({ ...form, weightTons: e.target.value })} />
+            <Input type="number" step="0.01" placeholder="Volume (m³)" value={form.volumeM3 ?? ''} onChange={e => setForm({ ...form, volumeM3: e.target.value })} />
 
             <Button type="submit" className="md:col-span-3">Create</Button>
           </form>
@@ -382,34 +358,22 @@ export default function ShipmentsPage() {
             <Button variant="ghost" onClick={() => setShowVoyageForm(v => !v)}>
               {showVoyageForm ? 'Close Voyage Form' : 'Add Voyage'}
             </Button>
-            <Button variant="ghost" onClick={autoAssignShipments}>
-              Auto-assign Shipments
-            </Button>
-            <Button variant="ghost" onClick={aiAutoAssign}>
-              AI Auto-Assign (AI)
-            </Button>
+            <Button variant="ghost" onClick={autoAssignShipments}>Auto-assign Shipments</Button>
+            <Button variant="ghost" onClick={aiAutoAssign}>AI Auto-Assign (AI)</Button>
           </div>
 
           {/* Inline Add Voyage */}
           {showVoyageForm && (
             <div className="card p-4 mb-3">
               <form onSubmit={createVoyage} className="grid md:grid-cols-3 gap-3">
-                <Input placeholder="Voyage Code" value={voyageForm.voyageCode}
-                      onChange={e=>setVoyageForm({...voyageForm, voyageCode:e.target.value})} />
-                <Input placeholder="Vessel Name" value={voyageForm.vesselName}
-                      onChange={e=>setVoyageForm({...voyageForm, vesselName:e.target.value})} />
-                <Input placeholder="Origin" value={voyageForm.origin}
-                      onChange={e=>setVoyageForm({...voyageForm, origin:e.target.value})} />
-                <Input placeholder="Destination" value={voyageForm.destination}
-                      onChange={e=>setVoyageForm({...voyageForm, destination:e.target.value})} />
-                <Input type="date" placeholder="Depart At" value={voyageForm.departAt}
-                      onChange={e=>setVoyageForm({...voyageForm, departAt:e.target.value})} />
-                <Input type="date" placeholder="Arrive By" value={voyageForm.arriveBy}
-                      onChange={e=>setVoyageForm({...voyageForm, arriveBy:e.target.value})} />
-                <Input type="number" step="0.01" placeholder="Weight Cap (tons)" value={voyageForm.weightCapT}
-                      onChange={e=>setVoyageForm({...voyageForm, weightCapT:e.target.value})} />
-                <Input type="number" step="0.01" placeholder="Volume Cap (m³)" value={voyageForm.volumeCapM3}
-                      onChange={e=>setVoyageForm({...voyageForm, volumeCapM3:e.target.value})} />
+                <Input placeholder="Voyage Code" value={voyageForm.voyageCode} onChange={e=>setVoyageForm({...voyageForm, voyageCode:e.target.value})} />
+                <Input placeholder="Vessel Name" value={voyageForm.vesselName} onChange={e=>setVoyageForm({...voyageForm, vesselName:e.target.value})} />
+                <Input placeholder="Origin" value={voyageForm.origin} onChange={e=>setVoyageForm({...voyageForm, origin:e.target.value})} />
+                <Input placeholder="Destination" value={voyageForm.destination} onChange={e=>setVoyageForm({...voyageForm, destination:e.target.value})} />
+                <Input type="date" placeholder="Depart At" value={voyageForm.departAt} onChange={e=>setVoyageForm({...voyageForm, departAt:e.target.value})} />
+                <Input type="date" placeholder="Arrive By" value={voyageForm.arriveBy} onChange={e=>setVoyageForm({...voyageForm, arriveBy:e.target.value})} />
+                <Input type="number" step="0.01" placeholder="Weight Cap (tons)" value={voyageForm.weightCapT} onChange={e=>setVoyageForm({...voyageForm, weightCapT:e.target.value})} />
+                <Input type="number" step="0.01" placeholder="Volume Cap (m³)" value={voyageForm.volumeCapM3} onChange={e=>setVoyageForm({...voyageForm, volumeCapM3:e.target.value})} />
 
                 <div className="md:col-span-3 flex gap-2">
                   <Button type="submit">Create Voyage</Button>
@@ -447,9 +411,7 @@ export default function ShipmentsPage() {
                     <td className="py-2">{s.volumeM3 ?? '-'}</td>
                     <td className="py-2">{s.status}</td>
                     <td className="py-2">{s.isPriority ? 'Yes' : 'No'}</td>
-                    <td className="py-2">
-                      {s.estimatedDelivery ? new Date(s.estimatedDelivery).toLocaleDateString() : '-'}
-                    </td>
+                    <td className="py-2">{s.estimatedDelivery ? new Date(s.estimatedDelivery).toLocaleDateString() : '-'}</td>
                     <td className="py-2">
                       <div className="flex flex-wrap gap-2">
                         <button className="btn btn-ghost" onClick={()=>del(s.id)}>Delete</button>
@@ -459,18 +421,133 @@ export default function ShipmentsPage() {
                         <button className="btn btn-ghost" onClick={()=>predictETA(s)} disabled={etaLoadingId === s.id}>
                           {etaLoadingId === s.id ? 'ETA…' : 'ETA+'}
                         </button>
+
+                        {/* Assign (strict) */}
+                        {!s.assignedVoyage ? (
+                          <button
+                            className="btn btn-ghost"
+                            onClick={async () => {
+                              const res = await fetch(`/api/shipments/${s.id}/assign`, { method: 'POST' })
+                              const data = await res.json().catch(()=>({}))
+                              if (!res.ok || data.error) return alert(data.error || 'Assign failed')
+                              if (data.alreadyAssigned) return alert('Already assigned')
+
+                              const vc = data.voyageCode || (data.voyage && data.voyage.voyageCode)
+                              setReports(rs => [
+                                {
+                                  id: crypto.randomUUID(),
+                                  time: Date.now(),
+                                  source: 'assign',
+                                  assigned: data.ok ? 1 : 0,
+                                  processed: 1,
+                                  pairs: data.ok && vc ? [{ shipmentId: s.shipmentId, voyageCode: vc }] : [],
+                                  messages: [data.ok ? `✅ ${s.shipmentId} → ${vc}` : (data.reason || 'No match')],
+                                },
+                                ...rs
+                              ])
+
+                              if (data.ok && vc) alert(`Assigned to ${vc}`)
+                              if (data.ok === false && data.reason) alert(data.reason)
+                              load()
+                            }}
+                          >
+                            Assign
+                          </button>
+                        ) : (
+                          <button className="btn btn-ghost" disabled>
+                            Assigned ({s.assignedVoyage.voyageCode})
+                          </button>
+                        )}
+
+                        {/* AI Assign (single) */}
+                        {!s.assignedVoyage && (
+                          <button
+                            className="btn btn-ghost"
+                            onClick={async () => {
+                              const res = await fetch(`/api/shipments/${s.id}/ai-assign`, { method: 'POST' })
+                              const data = await res.json().catch(()=>({}))
+                              if (!res.ok || data.error) return alert(data.error || 'AI assign failed')
+                              if (data.alreadyAssigned) return alert('Already assigned')
+
+                              if (data.ok && data.voyageCode) {
+                                const vc = data.voyageCode
+                                setReports(rs => [
+                                  {
+                                    id: crypto.randomUUID(),
+                                    time: Date.now(),
+                                    source: 'ai-assign',
+                                    assigned: 1, processed: 1,
+                                    pairs: [{ shipmentId: s.shipmentId, voyageCode: vc }],
+                                    messages: [`✅ ${s.shipmentId} → ${vc}`].concat(data.why ? [`Why: ${data.why}`] : []),
+                                  },
+                                  ...rs
+                                ])
+                                alert(`AI assigned to ${vc}${data.why ? `\n\nWhy: ${data.why}` : ''}`)
+                                load()
+                              } else {
+                                const hint = data.planHint || data.why || 'No direct lane. Try multi-leg via nearby ports.'
+                                setReports(rs => [
+                                  {
+                                    id: crypto.randomUUID(),
+                                    time: Date.now(),
+                                    source: 'ai-assign',
+                                    assigned: 0, processed: 1, pairs: [],
+                                    messages: [hint],
+                                  },
+                                  ...rs
+                                ])
+                                alert(hint)
+                              }
+                            }}
+                          >
+                            AI Assign
+                          </button>
+                        )}
+
+                        {/* Unassign */}
+                        {s.assignedVoyage && (
+                          <button
+                            className="btn btn-ghost"
+                            onClick={async () => {
+                              if (!confirm(`Unassign from ${s.assignedVoyage.voyageCode}?`)) return
+                              const res = await fetch(`/api/voyages/${s.assignedVoyage.id}/assign?shipmentId=${s.id}`, { method: 'DELETE' })
+                              const data = await res.json().catch(()=>({}))
+                              if (!res.ok || data.error) return alert(data.error || 'Unassign failed')
+
+                              setReports(rs => [
+                                {
+                                  id: crypto.randomUUID(),
+                                  time: Date.now(),
+                                  source: 'assign',
+                                  assigned: 0, processed: 1, pairs: [],
+                                  messages: [`ℹ️ ${s.shipmentId} unassigned from ${s.assignedVoyage.voyageCode}`],
+                                },
+                                ...rs
+                              ])
+                              alert('Unassigned'); load()
+                            }}
+                          >
+                            Unassign
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
                 ))}
                 {items.length === 0 && (
-                  <tr>
-                    <td colSpan={10} className="py-6 text-center text-[rgb(var(--muted))]">No shipments</td>
-                  </tr>
+                  <tr><td colSpan={10} className="py-6 text-center text-[rgb(var(--muted))]">No shipments</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* Inline ETA result (Manage tab) */}
+          {etaResultId && (
+            <div className="mt-3 card p-4 whitespace-pre-wrap text-sm">
+              <div className="mb-2 text-[rgb(var(--muted))]">AI ETA+ for selected shipment</div>
+              {etaResult}
+            </div>
+          )}
 
           {/* Pagination */}
           <div className="mt-4 flex items-center justify-between">
@@ -531,34 +608,17 @@ export default function ShipmentsPage() {
         <>
           <Card title="AI Tools (Plan Hint & FFD)">
             <div className="mb-3 grid md:grid-cols-6 gap-3">
-              {/* NEW: lane/date filters */}
-              <Input placeholder="From (Origin) — optional"
-                     value={aiFilter.origin}
-                     onChange={e=>setAiFilter(v=>({...v, origin: e.target.value}))} />
-              <Input placeholder="To (Destination) — optional"
-                     value={aiFilter.destination}
-                     onChange={e=>setAiFilter(v=>({...v, destination: e.target.value}))} />
-              <Input type="date"
-                     placeholder="Start on/after (optional)"
-                     value={aiFilter.startAfter}
-                     onChange={e=>setAiFilter(v=>({...v, startAfter: e.target.value}))} />
-
-              <Input placeholder="Vessel Weight Cap (optional)"
-                     value={vessel.weightCap}
-                     onChange={e=>setVessel(v=>({...v, weightCap: e.target.value}))} />
-              <Input placeholder="Vessel Volume Cap (optional)"
-                     value={vessel.volumeCap}
-                     onChange={e=>setVessel(v=>({...v, volumeCap: e.target.value}))} />
-
+              <Input placeholder="From (Origin) — optional" value={aiFilter.origin} onChange={e=>setAiFilter(v=>({...v, origin: e.target.value}))} />
+              <Input placeholder="To (Destination) — optional" value={aiFilter.destination} onChange={e=>setAiFilter(v=>({...v, destination: e.target.value}))} />
+              <Input type="date" placeholder="Start on/after (optional)" value={aiFilter.startAfter} onChange={e=>setAiFilter(v=>({...v, startAfter: e.target.value}))} />
+              <Input placeholder="Vessel Weight Cap (optional)" value={vessel.weightCap} onChange={e=>setVessel(v=>({...v, weightCap: e.target.value}))} />
+              <Input placeholder="Vessel Volume Cap (optional)" value={vessel.volumeCap} onChange={e=>setVessel(v=>({...v, volumeCap: e.target.value}))} />
               <div className="flex gap-2">
-                <Button variant="ghost" onClick={getPlanHint} disabled={aiLoading}>
-                  {aiLoading ? 'Getting AI Hint…' : 'AI Plan Hint'}
-                </Button>
+                <Button variant="ghost" onClick={getPlanHint} disabled={aiLoading}>{aiLoading ? 'Getting AI Hint…' : 'AI Plan Hint'}</Button>
                 <Button variant="ghost" onClick={runFFD}>Run FFD Plan</Button>
               </div>
             </div>
 
-            {/* AI Outputs */}
             {aiHint && (
               <div className="mt-4 card p-4 whitespace-pre-wrap text-sm">
                 <div className="mb-2 text-[rgb(var(--muted))]">AI Plan Hint</div>
@@ -576,9 +636,7 @@ export default function ShipmentsPage() {
                 <div className="mb-2 text-[rgb(var(--muted))]">FFD Plan</div>
                 <div>Assigned: {Array.isArray(ffdOut.assigned) ? ffdOut.assigned.join(', ') : '-'}</div>
                 <div>
-                  Skipped: {Array.isArray(ffdOut.skipped) && ffdOut.skipped.length
-                    ? ffdOut.skipped.map(s => `${s.shipmentId}(${s.reason})`).join(', ')
-                    : 'None'}
+                  Skipped: {Array.isArray(ffdOut.skipped) && ffdOut.skipped.length ? ffdOut.skipped.map(s => `${s.shipmentId}(${s.reason})`).join(', ') : 'None'}
                 </div>
                 {ffdOut.utilization && (
                   <div className="mt-2">
@@ -589,8 +647,65 @@ export default function ShipmentsPage() {
             )}
           </Card>
 
-            <AIConsole title="AI Console — Shipments" defaultUseDb={true} />
+          <AIConsole title="AI Console — Shipments" defaultUseDb={true} />
         </>
+      )}
+
+      {/* ===== WARNINGS TAB ===== */}
+      {tab === 'warnings' && (
+        <Card title="Assignment Reports">
+          {!reports.length ? (
+            <div className="text-sm text-[rgb(var(--muted))]">No reports yet. Use Assign / AI Assign / Auto-assign.</div>
+          ) : (
+            <div className="space-y-4">
+              {reports.map(r => (
+                <div key={r.id} className="card p-3">
+                  <div className="text-sm mb-2">
+                    <div><span className="text-[rgb(var(--muted))]">When:</span> {fmtTime(r.time)}</div>
+                    <div><span className="text-[rgb(var(--muted))]">Source:</span> {r.source.toUpperCase()}</div>
+                    <div><span className="text-[rgb(var(--muted))]">Assigned / Processed:</span> {r.assigned} / {r.processed}</div>
+                  </div>
+
+                  <div className="mb-2 text-[rgb(var(--muted))] text-sm">Shipment → Voyage</div>
+                  {r.pairs.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-[rgb(var(--muted))]">
+                            <th className="py-2">Shipment</th>
+                            <th className="py-2">Voyage</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {r.pairs.map((p, idx) => (
+                            <tr key={idx} className="border-t border-white/10">
+                              <td className="py-2">{p.shipmentId}</td>
+                              <td className="py-2">{p.voyageCode}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : <div className="text-sm text-[rgb(var(--muted))]">No successful pairs parsed.</div>}
+
+                  {Array.isArray(r.messages) && r.messages.length > 0 && (
+                    <div className="mt-3">
+                      <div className="mb-1 text-[rgb(var(--muted))] text-sm">Messages</div>
+                      <ul className="space-y-1 text-sm">
+                        {r.messages.map((m, i) => <li key={i} className="border-b border-white/10 pb-2">{m}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={() => setReports([])}>Clear all</Button>
+                <Button variant="ghost" onClick={() => setTab('manage')}>Back to Manage</Button>
+              </div>
+            </div>
+          )}
+        </Card>
       )}
     </div>
   )

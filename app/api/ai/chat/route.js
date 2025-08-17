@@ -1,45 +1,79 @@
 // app/api/ai/chat/route.js
-export const runtime = 'nodejs';
-import { NextResponse } from 'next/server';
-import { askGeminiWithRetry } from '@/lib/ai';
+export const runtime = "nodejs";
+
+import { NextResponse } from "next/server";
+import { askGeminiWithRetry } from "@/lib/ai";
+import { getSnapshotCached } from "@/lib/snapshot";
 
 export async function POST(req) {
   try {
-    const { messages = [], context = {} } = await req.json();
+    const { message = "", context = null } = await req.json();
 
-    // Build a simple conversation prompt for Gemini
+    if (!message.trim()) {
+      return NextResponse.json({ text: "Please enter a question." }, { status: 400 });
+    }
+
+    // Always attach a compact snapshot so AI has something to ground answers on
+    // when the user is in AI Chat mode (no DB plan/data passed).
+    const snap = await getSnapshotCached();
+    const safeSnap = {
+      generatedAt: snap?.generatedAt || null,
+      shipments: {
+        total: snap?.shipments?.total ?? 0,
+        byStatus: snap?.shipments?.byStatus ?? {},
+        priorityCount: snap?.shipments?.priorityCount ?? 0,
+        // small samples only to avoid prompt bloat
+        recent: Array.isArray(snap?.shipments?.recent) ? snap.shipments.recent.slice(0, 20) : [],
+        topLanes: Array.isArray(snap?.shipments?.topLanes) ? snap.shipments.topLanes.slice(0, 10) : [],
+      },
+      voyages: {
+        total: snap?.voyages?.total ?? 0,
+        active: snap?.voyages?.active ?? 0,
+        recent: Array.isArray(snap?.voyages?.recent) ? snap.voyages.recent.slice(0, 20) : [],
+        upcoming: Array.isArray(snap?.voyages?.upcoming) ? snap.voyages.upcoming.slice(0, 10) : [],
+        topLanes: Array.isArray(snap?.voyages?.topLanes) ? snap.voyages.topLanes.slice(0, 10) : [],
+      },
+    };
+
+    // If the front-end passed a last-DB-result context, include it too.
+    // This helps for grounded follow-ups like “should I choose this voyage for this shipment…?”
+    const mergedContext = {
+      snapshot: safeSnap,
+      previousDbContext: context ?? null,
+    };
+
     const system = `
-You are Smart Freight AI. Be brief, clear, and helpful.
-Project context:
-- Domain: Logistics (Shipments, Voyages, Capacity planning, Tracking)
-- Capabilities: pagination/filter/search CRUD, FFD planning, AI ETA+, AI plan hints
-- Output: short paragraphs or bullet points; use simple formatting.
-
-If user asks for actions (plan/assign), provide step-by-step guidance or pseudo-SQL/JS
-— do not invent data. If you estimate ETAs, say it's an estimate.
-    `.trim();
-
-    const history = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
-    const ctxText = Object.entries(context || {})
-      .map(([k, v]) => `- ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
-      .join('\n');
+You are "Smart Freight Advisor".
+- Be concise and practical.
+- Ground answers ONLY in the provided CONTEXT (snapshot + previous DB context if any).
+- If a needed fact is missing from CONTEXT, say what is missing and suggest the exact follow-up query.
+- Mark any guess with "Assumption".
+- Never invent IDs, dates, weights, volumes, or counts not present in CONTEXT.
+`.trim();
 
     const prompt = `
 ${system}
 
-Optional context:
-${ctxText || '- none -'}
+USER QUESTION:
+${message}
 
-Conversation so far:
-${history}
+CONTEXT (JSON):
+${JSON.stringify(mergedContext, null, 2)}
 
-ASSISTANT:
+Write the best short answer grounded ONLY in the CONTEXT above.
 `.trim();
 
-    const reply = await askGeminiWithRetry(prompt);
-    return NextResponse.json({ reply });
+    const text = await askGeminiWithRetry(prompt, {
+      model: "gemini-1.5-flash",
+      maxRetries: 1,
+    });
+
+    return NextResponse.json({ text, plan: null, data: { context: mergedContext } });
   } catch (e) {
-    console.error('POST /api/ai/chat error', e);
-    return NextResponse.json({ error: 'AI error' }, { status: 500 });
+    // If quota/key issues, your lib/ai.js throws with a clear message & status
+    return NextResponse.json(
+      { text: e?.message || "AI chat error" },
+      { status: e?.status || 500 }
+    );
   }
 }

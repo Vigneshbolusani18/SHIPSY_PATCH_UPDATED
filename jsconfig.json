@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
-    "paths": {
-      "@/*": ["./*"]
-    }
-  }
+    "baseUrl": ".",
+    "paths": { "@/*": ["./*"] },
+    "skipLibCheck": true,
+    "checkJs": false
+  },
+  "typeAcquisition": { "enable": false }
 }
