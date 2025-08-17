@@ -8,18 +8,23 @@
 
 A comprehensive logistics management platform designed to handle **shipments**, **voyages**, **AI-assisted planning**, and **real-time tracking**. Built with modern web technologies including **Next.js App Router**, **Prisma ORM**, **Neon Postgres**, and **Google Gemini API**, beautifully styled with **TailwindCSS** and deployed on **Vercel**.
 
-<div>
-  <img src="public/main_page.png" alt="Smart Freight & Storage Planner Screenshot">
-  <img src="public/shipments.png" alt="Smart Freight & Storage Planner Screenshot">
-  <img src="public/voyages.png" alt="Smart Freight & Storage Planner Screenshot">
+<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+  <img src="public/app_photos/login_page.png" alt="Login Page" width="250">
+  <img src="public/app_photos/mainpage.png" alt="Main Page" width="250">
+  <img src="public/app_photos/register_page.png" alt="Register Page" width="250">
+  <img src="public/app_photos/shp_add.png" alt="Shipment Add" width="250">
+  <img src="public/app_photos/shp_ai.png" alt="Shipment AI" width="250">
+  <img src="public/app_photos/shp_manage.png" alt="Shipment Manage" width="250">
+  <img src="public/app_photos/voy.png" alt="Voyage Page" width="250">
 </div>
+
 
 ---
 
 ## 🌐 Live Demo
 
 Try it online:  
-[🔗 Live Web App](https://shipsy-rhm5.vercel.app/)
+[🔗 Live Web App](https://kakashi-ruddy.vercel.app)
 
 ---
 
@@ -54,14 +59,6 @@ Try it online:
 - **Capacity Analytics** – Monitor and optimize vessel utilization
 - **Performance Metrics** – Track key performance indicators
 - **Snapshot Caching** – Efficient data processing to reduce API costs
-
----
-
-## 🎥 Demo & Walkthrough
-
-[![Watch the demo](https://img.youtube.com/vi/dQw4w9WgXcQ/0.jpg)](https://smart-freight-planner.vercel.app/demo)
-
-<p align="center"><i>Click the image above to explore the Smart Freight & Storage Planner live demo</i></p>
 
 ---
 
