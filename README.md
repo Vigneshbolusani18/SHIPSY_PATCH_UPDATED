@@ -211,8 +211,6 @@ Intelligent caching system that:
 - **GitHub** – Version control and repository hosting
 - **ESLint** – Code linting for consistency
 - **Prettier** – Code formatting
-- **TypeScript** – Type safety and better developer experience
-
 ---
 
 ## 🚀 Deployment
