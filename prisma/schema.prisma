@@ -1,13 +1,12 @@
-// prisma/schema.prisma
-datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL") // pooled (PgBouncer)
-  directUrl = env("DIRECT_URL") // direct (no PgBouncer) for migrate
-}
-
 generator client {
   provider   = "prisma-client-js"
-  engineType = "binary"   // <-- add this
+  engineType = "binary"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -17,39 +16,71 @@ model User {
   createdAt    DateTime @default(now())
 }
 
+model Shipment {
+  id          String             @id @default(cuid())
+  shipmentId  String             @unique
+  status      ShipmentStatus     @default(CREATED)
+  isPriority  Boolean            @default(false)
+  origin      String
+  destination String
+  shipDate    DateTime
+  transitDays Int
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  volumeM3    Float?
+  weightTons  Float?
+  events      TrackingEvent[]
+  assignments VoyageAssignment[]
+
+  @@index([status, isPriority, createdAt])
+  @@index([shipDate])
+  @@index([shipmentId])
+}
+
+model TrackingEvent {
+  id         String            @id @default(cuid())
+  shipmentId String
+  eventType  TrackingEventType
+  location   String
+  notes      String?
+  occurredAt DateTime          @default(now())
+  createdAt  DateTime          @default(now())
+  shipment   Shipment          @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId, occurredAt])
+}
+
+model Voyage {
+  id          String             @id @default(cuid())
+  voyageCode  String             @unique
+  vesselName  String
+  origin      String
+  destination String
+  departAt    DateTime
+  arriveBy    DateTime
+  weightCapT  Float?
+  volumeCapM3 Float?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  assignments VoyageAssignment[]
+}
+
+model VoyageAssignment {
+  id         String   @id @default(cuid())
+  voyageId   String
+  shipmentId String
+  createdAt  DateTime @default(now())
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  voyage     Voyage   @relation(fields: [voyageId], references: [id], onDelete: Cascade)
+
+  @@unique([voyageId, shipmentId])
+}
+
 enum ShipmentStatus {
   CREATED
   IN_TRANSIT
   DELIVERED
   RETURNED
-}
-
-model Shipment {
-  id         String         @id @default(cuid())
-  shipmentId String         @unique
-  status     ShipmentStatus @default(CREATED)
-  isPriority Boolean        @default(false)
-
-  origin      String
-  destination String
-
-  shipDate    DateTime
-  transitDays Int
-
-  // NEW: capacity planning inputs
-  weightTons Float?
-  volumeM3   Float?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  events      TrackingEvent[]
-  assignments VoyageAssignment[]
-
-  // Helpful indexes for list/filter/sort
-  @@index([status, isPriority, createdAt])
-  @@index([shipDate])
-  @@index([shipmentId])
 }
 
 enum TrackingEventType {
@@ -60,46 +91,4 @@ enum TrackingEventType {
   ARRIVED
   DELIVERED
   DELAYED
-}
-
-model TrackingEvent {
-  id         String   @id @default(cuid())
-  shipmentId String
-  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-
-  eventType  TrackingEventType
-  location   String
-  notes      String?
-  occurredAt DateTime          @default(now())
-  createdAt  DateTime          @default(now())
-
-  @@index([shipmentId, occurredAt])
-}
-
-model Voyage {
-  id          String   @id @default(cuid())
-  voyageCode  String   @unique
-  vesselName  String
-  origin      String
-  destination String
-  departAt    DateTime
-  arriveBy    DateTime
-  weightCapT  Float? // tons
-  volumeCapM3 Float? // cubic meters
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  assignments VoyageAssignment[]
-}
-
-model VoyageAssignment {
-  id         String   @id @default(cuid())
-  voyageId   String
-  shipmentId String
-  createdAt  DateTime @default(now())
-
-  voyage   Voyage   @relation(fields: [voyageId], references: [id], onDelete: Cascade)
-  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
-
-  @@unique([voyageId, shipmentId])
 }
